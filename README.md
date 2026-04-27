@@ -112,34 +112,34 @@ Imagen PET de cuerpo completo utilizada como escena de interés. Las zonas oscur
 
 ### Region Growing
 
-| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Orient.° | Excent. | Compact. | I. media |
-|----|------|-----------|-------------------|--------------------|----------|----------|---------|----------|----------|
-| 1 | 209 | 52.87 | (76.7, 158.8) | (68, 151, 18, 16) | 17.77 / 13.51 | 118.69 | 0.650 | 0.940 | 13.9 |
-| 2 | 170 | 56.77 | (77.7, 179.1) | (68, 170, 19, 18) | 20.60 / 10.86 | 139.74 | 0.850 | 0.663 | 10.7 |
-| 3 | 149 | 49.80 | (107.2, 185.7) | (102, 176, 11, 20) | 20.16 / 8.43 | 165.73 | 0.908 | 0.755 | 12.8 |
+| ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h)  | Ejes M/m      | Orient.° | Excent. | Compact. | I. media |
+| --- | ---- | --------- | ---------------- | ------------------ | ------------- | -------- | ------- | -------- | -------- |
+| 1   | 209  | 52.87     | (76.7, 158.8)    | (68, 151, 18, 16)  | 17.77 / 13.51 | 118.69   | 0.650   | 0.940    | 13.9     |
+| 2   | 170  | 56.77     | (77.7, 179.1)    | (68, 170, 19, 18)  | 20.60 / 10.86 | 139.74   | 0.850   | 0.663    | 10.7     |
+| 3   | 149  | 49.80     | (107.2, 185.7)   | (102, 176, 11, 20) | 20.16 / 8.43  | 165.73   | 0.908   | 0.755    | 12.8     |
 
 ### K-Means
 
-| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Orient.° | Excent. | Compact. | I. media |
-|----|------|-----------|-------------------|--------------------|----------|----------|---------|----------|----------|
-| 1 | 217 | 72.18 | (106.8, 184.7) | (99, 169, 15, 29) | 27.98 / 10.48 | 162.53 | 0.927 | 0.523 | 23.5 |
-| 2 | 31 | 20.73 | (50.3, 196.2) | (48, 192, 6, 9) | 8.42 / 4.04 | 11.17 | 0.877 | 0.907 | 33.5 |
-| 3 | 26 | 18.14 | (111.3, 202.5) | (108, 200, 7, 6) | 5.97 / 4.56 | 57.66 | 0.646 | 0.993 | 46.3 |
+| ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m      | Orient.° | Excent. | Compact. | I. media |
+| --- | ---- | --------- | ---------------- | ----------------- | ------------- | -------- | ------- | -------- | -------- |
+| 1   | 217  | 72.18     | (106.8, 184.7)   | (99, 169, 15, 29) | 27.98 / 10.48 | 162.53   | 0.927   | 0.523    | 23.5     |
+| 2   | 31   | 20.73     | (50.3, 196.2)    | (48, 192, 6, 9)   | 8.42 / 4.04   | 11.17    | 0.877   | 0.907    | 33.5     |
+| 3   | 26   | 18.14     | (111.3, 202.5)   | (108, 200, 7, 6)  | 5.97 / 4.56   | 57.66    | 0.646   | 0.993    | 46.3     |
 
 ---
 
 ## Estructura del proyecto
 
-| Ruta | Contenido |
-|------|-----------|
-| `README.md` | Este archivo: resumen, figuras y estructura |
-| `segment_pet.py` | Pipeline único: preprocesamiento, bordes, segmentación, features, máscaras, recortes |
-| `requirements.txt` | Dependencias (numpy, opencv-python, matplotlib) |
-| `imagenes/` | Carpeta de entrada; por defecto `pet_cuerpo_completo.png` |
-| `resultados/` | PNG, CSV y recortes generados al ejecutar |
-| `docs/Readme.md` | Instalación, entorno virtual y salidas |
-| `docs/doc.md` | Informe / respuestas a la consigna |
-| `.gitignore` | Excluye venv/, cachés de Python e ignorados de IDE |
+| Ruta               | Contenido                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| `README.md`        | Este archivo: resumen, figuras y estructura                                          |
+| `segment_pet.py`   | Pipeline único: preprocesamiento, bordes, segmentación, features, máscaras, recortes |
+| `requirements.txt` | Dependencias (numpy, opencv-python, matplotlib)                                      |
+| `imagenes/`        | Carpeta de entrada; por defecto `pet_cuerpo_completo.png`                            |
+| `resultados/`      | PNG, CSV y recortes generados al ejecutar                                            |
+| `docs/Readme.md`   | Instalación, entorno virtual y salidas                                               |
+| `docs/doc.md`      | Informe / respuestas a la consigna                                                   |
+| `.gitignore`       | Excluye venv/, cachés de Python e ignorados de IDE                                   |
 
 Parámetros útiles en código: `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `CANNY_LOW`/`CANNY_HIGH`, `CROP_PAD`, `MAX_OBJECT_AREA` en `segment_pet.py`.
 

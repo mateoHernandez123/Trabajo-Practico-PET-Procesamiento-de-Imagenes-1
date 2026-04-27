@@ -10,7 +10,7 @@ La imagen elegida es un **PET de cuerpo completo** (Tomografía por Emisión de 
 
 ## 1. Pre-procesamiento
 
-> *Pre procesar la imagen con los elementos que sean necesarios para generar una extracción lo más limpia posible.*
+> _Pre procesar la imagen con los elementos que sean necesarios para generar una extracción lo más limpia posible._
 
 ### ¿Qué se hizo?
 
@@ -20,6 +20,7 @@ Se aplica un pipeline de dos filtros en cascada:
 2. **Filtro gaussiano (3×3, σ=0.8):** suaviza el grano residual del detector PET con una intensidad leve para no perder detalle.
 
 Además se genera una **máscara del cuerpo** para separar la silueta del paciente del fondo blanco de la imagen. Esto se logra con:
+
 - Umbralización inversa (píxeles < 240 → cuerpo)
 - Cierre morfológico con kernel elíptico 5×5 (3 iteraciones) para cerrar huecos internos
 - Apertura morfológica (1 iteración) para eliminar ruido externo
@@ -33,7 +34,7 @@ Sin la máscara del cuerpo, los bordes y la segmentación detectarían artefacto
 
 ## 2. Detección de bordes
 
-> *Obtener los bordes.*
+> _Obtener los bordes._
 
 ### ¿Qué se hizo?
 
@@ -53,7 +54,7 @@ Se usa el detector de **Canny** con umbrales 40 (inferior) y 120 (superior) sobr
 
 ## 3. Bounding Box
 
-> *Obtener bounding box.*
+> _Obtener bounding box._
 
 ### ¿Qué se hizo?
 
@@ -78,22 +79,22 @@ Para lesiones pequeñas en PET, un bounding box alineado a los ejes es suficient
 
 ## 4. Features (características)
 
-> *Obtener features (área, ejes, centroide, etc.)*
+> _Obtener features (área, ejes, centroide, etc.)_
 
 ### ¿Qué se calculó?
 
-| Feature | Cómo se calcula | Interpretación |
-|---------|-----------------|----------------|
-| **Área (px)** | Conteo de píxeles del componente conexo | Tamaño de la lesión |
-| **Perímetro (px)** | `cv2.arcLength()` sobre el contorno cerrado | Irregularidad del borde |
-| **Centroide (x, y)** | Centro de masa geométrico del componente | Ubicación espacial |
-| **BBox (x, y, w, h)** | Rectángulo contenedor del componente | Extensión espacial |
-| **Eje mayor (px)** | Eje mayor de la elipse ajustada (`cv2.fitEllipse`) | Dimensión principal |
-| **Eje menor (px)** | Eje menor de la elipse ajustada | Dimensión secundaria |
-| **Orientación (°)** | Ángulo de la elipse ajustada | Dirección del eje mayor |
-| **Excentricidad** | \( e = \sqrt{1 - (b/a)^2} \), donde a=semieje mayor, b=semieje menor | 0 = circular, →1 = elongado |
-| **Compacidad** | \( C = 4\pi \cdot A / P^2 \) | 1 = círculo perfecto, <1 = irregular |
-| **Intensidad media** | Promedio de valores de gris dentro del componente | Nivel de captación metabólica |
+| Feature               | Cómo se calcula                                                      | Interpretación                       |
+| --------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| **Área (px)**         | Conteo de píxeles del componente conexo                              | Tamaño de la lesión                  |
+| **Perímetro (px)**    | `cv2.arcLength()` sobre el contorno cerrado                          | Irregularidad del borde              |
+| **Centroide (x, y)**  | Centro de masa geométrico del componente                             | Ubicación espacial                   |
+| **BBox (x, y, w, h)** | Rectángulo contenedor del componente                                 | Extensión espacial                   |
+| **Eje mayor (px)**    | Eje mayor de la elipse ajustada (`cv2.fitEllipse`)                   | Dimensión principal                  |
+| **Eje menor (px)**    | Eje menor de la elipse ajustada                                      | Dimensión secundaria                 |
+| **Orientación (°)**   | Ángulo de la elipse ajustada                                         | Dirección del eje mayor              |
+| **Excentricidad**     | \( e = \sqrt{1 - (b/a)^2} \), donde a=semieje mayor, b=semieje menor | 0 = circular, →1 = elongado          |
+| **Compacidad**        | \( C = 4\pi \cdot A / P^2 \)                                         | 1 = círculo perfecto, <1 = irregular |
+| **Intensidad media**  | Promedio de valores de gris dentro del componente                    | Nivel de captación metabólica        |
 
 ### ¿Por qué estas features?
 
@@ -114,7 +115,7 @@ Requiere al menos 5 puntos en el contorno. Para componentes más pequeños, los 
 
 ## 5. Máscara binaria
 
-> *Generar máscara binaria.*
+> _Generar máscara binaria._
 
 ### ¿Qué se hizo?
 
@@ -142,7 +143,7 @@ La apertura primero elimina píxeles sueltos que podrían crear "puentes" espuri
 
 ## 6. Recorte del objeto original
 
-> *Generar a partir de la máscara un recorte de la imagen original que sólo contenga el objeto.*
+> _Generar a partir de la máscara un recorte de la imagen original que sólo contenga el objeto._
 
 ### ¿Qué se hizo?
 
@@ -168,21 +169,21 @@ Sin la máscara, el recorte incluiría tejido circundante dentro del bounding bo
 
 ### Region Growing
 
-| Aspecto | Detalle |
-|---------|---------|
-| **Enfoque** | Umbral por percentil + BFS desde semillas |
-| **Ventaja** | Control fino sobre la tolerancia de crecimiento |
-| **Limitación** | Sensible a la elección de percentil y tolerancia; puede sub/sobre-segmentar |
-| **Cuándo usar** | Cuando se conoce aproximadamente el rango de intensidad de las lesiones |
+| Aspecto         | Detalle                                                                     |
+| --------------- | --------------------------------------------------------------------------- |
+| **Enfoque**     | Umbral por percentil + BFS desde semillas                                   |
+| **Ventaja**     | Control fino sobre la tolerancia de crecimiento                             |
+| **Limitación**  | Sensible a la elección de percentil y tolerancia; puede sub/sobre-segmentar |
+| **Cuándo usar** | Cuando se conoce aproximadamente el rango de intensidad de las lesiones     |
 
 ### K-Means
 
-| Aspecto | Detalle |
-|---------|---------|
-| **Enfoque** | Clustering no supervisado en el espacio de intensidades |
-| **Ventaja** | No requiere umbrales manuales; separa automáticamente niveles de captación |
-| **Limitación** | El número K es un hiperparámetro; puede agrupar tejidos distintos |
-| **Cuándo usar** | Como exploración inicial cuando no se tienen umbrales de referencia |
+| Aspecto         | Detalle                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| **Enfoque**     | Clustering no supervisado en el espacio de intensidades                    |
+| **Ventaja**     | No requiere umbrales manuales; separa automáticamente niveles de captación |
+| **Limitación**  | El número K es un hiperparámetro; puede agrupar tejidos distintos          |
+| **Cuándo usar** | Como exploración inicial cuando no se tienen umbrales de referencia        |
 
 ### Filtro anatómico (heurístico)
 

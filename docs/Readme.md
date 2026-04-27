@@ -50,11 +50,11 @@ pip install -r requirements.txt
 
 Paquetes utilizados:
 
-| Paquete | Uso |
-|---------|-----|
-| `numpy` | Operaciones matriciales y cálculos numéricos |
+| Paquete         | Uso                                                                           |
+| --------------- | ----------------------------------------------------------------------------- |
+| `numpy`         | Operaciones matriciales y cálculos numéricos                                  |
 | `opencv-python` | Lectura de imágenes, filtros, morfología, Canny, K-Means, componentes conexas |
-| `matplotlib` | Visualización del pipeline y galería de recortes |
+| `matplotlib`    | Visualización del pipeline y galería de recortes                              |
 
 ---
 
@@ -120,12 +120,12 @@ resultados/
 
 ## Argumentos del CLI
 
-| Argumento | Tipo | Default | Descripción |
-|-----------|------|---------|-------------|
-| `path` | posicional (opcional) | `imagenes/pet_cuerpo_completo.png` | Ruta a la imagen PET |
-| `--method` | `region` \| `kmeans` \| `both` | `both` | Método de segmentación |
-| `--filter-anatomy` | flag | desactivado | Activa filtro heurístico anatómico |
-| `--no-show` | flag | desactivado | No abre ventanas de matplotlib |
+| Argumento          | Tipo                           | Default                            | Descripción                        |
+| ------------------ | ------------------------------ | ---------------------------------- | ---------------------------------- |
+| `path`             | posicional (opcional)          | `imagenes/pet_cuerpo_completo.png` | Ruta a la imagen PET               |
+| `--method`         | `region` \| `kmeans` \| `both` | `both`                             | Método de segmentación             |
+| `--filter-anatomy` | flag                           | desactivado                        | Activa filtro heurístico anatómico |
+| `--no-show`        | flag                           | desactivado                        | No abre ventanas de matplotlib     |
 
 ---
 
@@ -133,12 +133,12 @@ resultados/
 
 Las constantes al inicio de `segment_pet.py` permiten calibrar el pipeline sin modificar la lógica:
 
-| Constante | Valor | Descripción |
-|-----------|-------|-------------|
-| `HOT_PERCENTILE` | 90.0 | Percentil para candidatos (Region Growing) |
-| `REGION_GROW_TOLERANCE` | 25 | Tolerancia de intensidad para BFS |
-| `KMEANS_K` | 4 | Número de clusters |
-| `MIN_LESION_AREA` | 15 | Área mínima (px) para conservar componente |
-| `CANNY_LOW` / `CANNY_HIGH` | 40 / 120 | Umbrales de Canny |
-| `CROP_PAD` | 4 | Margen alrededor de cada recorte |
-| `MAX_OBJECT_AREA` | 500 | Área máxima para filtro anatómico |
+| Constante                  | Valor    | Descripción                                |
+| -------------------------- | -------- | ------------------------------------------ |
+| `HOT_PERCENTILE`           | 90.0     | Percentil para candidatos (Region Growing) |
+| `REGION_GROW_TOLERANCE`    | 25       | Tolerancia de intensidad para BFS          |
+| `KMEANS_K`                 | 4        | Número de clusters                         |
+| `MIN_LESION_AREA`          | 15       | Área mínima (px) para conservar componente |
+| `CANNY_LOW` / `CANNY_HIGH` | 40 / 120 | Umbrales de Canny                          |
+| `CROP_PAD`                 | 4        | Margen alrededor de cada recorte           |
+| `MAX_OBJECT_AREA`          | 500      | Área máxima para filtro anatómico          |
