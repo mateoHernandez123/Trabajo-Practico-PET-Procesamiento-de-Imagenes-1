@@ -7,13 +7,23 @@ Cumple la consigna del trabajo:
     3. Obtener bounding box de cada objeto.
     4. Obtener features (área, perímetro, centroide, ejes, orientación,
        excentricidad, compacidad, intensidad media).
-    5. Generar máscara binaria.
+    5. Generar máscara binaria con post-procesamiento morfológico
+       (erosión + dilatación explícitas).
     6. Generar, a partir de la máscara, un recorte por objeto.
 
 Ofrece DOS métodos de segmentación intercambiables (--method):
     - region   : Umbralización por percentil + Region Growing (BFS).
     - kmeans   : Clustering K-Means en intensidades (cluster más caliente).
     - both     : Ejecuta los dos y produce salidas comparativas.
+
+Post-procesamiento morfológico:
+    Tras la segmentación, se aplica un pipeline de morfología explícita:
+        1. Erosión  — separa regiones débilmente conectadas y elimina ruido.
+        2. Dilatación — recupera los bordes del tumor (más iteraciones que la
+           erosión para capturar píxeles de borde con menor captación).
+        3. Cierre — sella huecos internos residuales.
+        4. Filtro por área — descarta componentes menores al umbral.
+    Se generan imágenes intermedias de cada paso en resultados/<método>/morfologia/.
 
 Filtro anatómico opcional (--filter-anatomy):
     Descarta componentes con área excesiva o ubicados en la franja superior
@@ -48,11 +58,17 @@ REGION_GROW_TOLERANCE = 25     # Tolerancia en intensidad para crecer
 KMEANS_K = 4                   # Número de clusters para K-Means
 KMEANS_ATTEMPTS = 5            # Reinicios de K-Means (mejora estabilidad)
 MIN_LESION_AREA = 15           # Área mínima (px) para conservar un componente
-MORPH_KERNEL = 3               # Tamaño del kernel de morfología
+MORPH_KERNEL = 3               # Tamaño del kernel de morfología (cierre final)
 BODY_BG_THRESHOLD = 240        # Píxeles > este valor se consideran fondo blanco
 CANNY_LOW = 40                 # Umbral inferior de Canny
 CANNY_HIGH = 120               # Umbral superior de Canny
 CROP_PAD = 4                   # Margen alrededor de cada recorte
+
+# Morfología explícita (erosión + dilatación)
+ERODE_KERNEL = 3               # Tamaño del kernel de erosión
+ERODE_ITERATIONS = 1           # Iteraciones de erosión (separa regiones, elimina ruido)
+DILATE_KERNEL = 3              # Tamaño del kernel de dilatación
+DILATE_ITERATIONS = 2          # Iteraciones de dilatación (recupera bordes del tumor)
 
 # Filtro anatómico (heurístico)
 EXCLUDE_TOP_FRACTION = 0.30    # Centroides en el 30% superior → cabeza
@@ -165,13 +181,13 @@ def region_growing(
 def segment_region(
     inverted: np.ndarray,
     body: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """Devuelve (mask_final, candidatos, region_growing_raw, threshold)."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, dict[str, np.ndarray]]:
+    """Devuelve (mask_final, candidatos, region_growing_raw, threshold, morph_steps)."""
     candidates, thr = hot_candidates(inverted, body)
     seeds = seeds_from_candidates(candidates)
     grown = region_growing(inverted, seeds, body, REGION_GROW_TOLERANCE)
-    final = postprocess(grown)
-    return final, candidates, grown, thr
+    final, morph_steps = postprocess(grown)
+    return final, candidates, grown, thr, morph_steps
 
 
 # ---------------------------------------------------------------------------
@@ -246,28 +262,59 @@ def _colourise_clusters(cluster_map, body, palette):
 def segment_kmeans(
     gray: np.ndarray,
     body: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Devuelve (mask_final, mask_raw, cluster_map, centers_sorted)."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+    """Devuelve (mask_final, mask_raw, cluster_map, centers_sorted, morph_steps)."""
     raw, cluster_map, centers = kmeans_segmentation(gray, body, KMEANS_K)
-    final = postprocess(raw)
-    return final, raw, cluster_map, centers
+    final, morph_steps = postprocess(raw)
+    return final, raw, cluster_map, centers, morph_steps
 
 
 # ---------------------------------------------------------------------------
 # Post-procesamiento común
 # ---------------------------------------------------------------------------
 
-def postprocess(mask: np.ndarray) -> np.ndarray:
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MORPH_KERNEL, MORPH_KERNEL))
-    cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel, iterations=2)
+def postprocess(mask: np.ndarray) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """Limpieza morfológica con erosión y dilatación explícitas.
 
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned, connectivity=8)
-    filtered = np.zeros_like(cleaned)
+    Pipeline:
+        1. Erosión — elimina conexiones espurias y ruido fino.
+        2. Dilatación — recupera los bordes del tumor y rellena micro-huecos.
+           Usar más iteraciones de dilatación que de erosión produce una
+           expansión neta que captura píxeles de borde con menor captación.
+        3. Cierre — sella huecos internos que persistan tras la dilatación.
+        4. Filtro por área — descarta componentes menores a MIN_LESION_AREA.
+
+    Retorna (máscara_final, diccionario_de_pasos_intermedios).
+    """
+    steps: dict[str, np.ndarray] = {"raw": mask.copy()}
+
+    # 1. Erosión explícita
+    k_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                        (ERODE_KERNEL, ERODE_KERNEL))
+    eroded = cv2.erode(mask, k_erode, iterations=ERODE_ITERATIONS)
+    steps["eroded"] = eroded.copy()
+
+    # 2. Dilatación explícita
+    k_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                         (DILATE_KERNEL, DILATE_KERNEL))
+    dilated = cv2.dilate(eroded, k_dilate, iterations=DILATE_ITERATIONS)
+    steps["dilated"] = dilated.copy()
+
+    # 3. Cierre morfológico para sellar huecos internos restantes
+    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                        (MORPH_KERNEL, MORPH_KERNEL))
+    closed = cv2.morphologyEx(dilated, cv2.MORPH_CLOSE, k_close, iterations=1)
+    steps["closed"] = closed.copy()
+
+    # 4. Filtro por área mínima
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+    filtered = np.zeros_like(closed)
     for i in range(1, num):
         if stats[i, cv2.CC_STAT_AREA] >= MIN_LESION_AREA:
             filtered[labels == i] = 255
-    return filtered
+    steps["filtered"] = filtered.copy()
+
+    return filtered, steps
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +501,13 @@ def save_features_csv(path: Path, features: list[dict]) -> None:
             ])
 
 
+def save_morphology_steps(out_dir: Path, steps: dict[str, np.ndarray]) -> None:
+    morph_dir = out_dir / "morfologia"
+    morph_dir.mkdir(parents=True, exist_ok=True)
+    for name, img in steps.items():
+        cv2.imwrite(str(morph_dir / f"{name}.png"), img)
+
+
 def save_outputs(
     out_dir: Path,
     edges: np.ndarray,
@@ -461,6 +515,7 @@ def save_outputs(
     characterization: np.ndarray,
     crops: list[np.ndarray],
     features: list[dict],
+    morph_steps: dict[str, np.ndarray] | None = None,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_dir / "edges.png"), edges)
@@ -474,6 +529,8 @@ def save_outputs(
     for f, crop in zip(features, crops):
         cv2.imwrite(str(crops_dir / f"object_{f['id']:02d}.png"), crop)
     save_features_csv(out_dir / "features.csv", features)
+    if morph_steps is not None:
+        save_morphology_steps(out_dir, morph_steps)
 
 
 # ---------------------------------------------------------------------------
@@ -595,6 +652,31 @@ def show_methods_comparison(
     plt.show()
 
 
+def show_morphology_steps(
+    steps: dict[str, np.ndarray],
+    method_label: str,
+) -> None:
+    """Muestra los pasos intermedios de la morfología: raw → erosión → dilatación → cierre → filtrado."""
+    titles = [
+        ("raw",      "1. Máscara cruda\n(segmentación)"),
+        ("eroded",   f"2. Erosión\n(kernel {ERODE_KERNEL}×{ERODE_KERNEL}, "
+                     f"{ERODE_ITERATIONS} iter)"),
+        ("dilated",  f"3. Dilatación\n(kernel {DILATE_KERNEL}×{DILATE_KERNEL}, "
+                     f"{DILATE_ITERATIONS} iter)"),
+        ("closed",   f"4. Cierre\n(kernel {MORPH_KERNEL}×{MORPH_KERNEL}, 1 iter)"),
+        ("filtered", f"5. Filtrado por área\n(≥ {MIN_LESION_AREA} px)"),
+    ]
+    n = len(titles)
+    fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 4))
+    for ax, (key, label) in zip(axes, titles):
+        ax.imshow(steps[key], cmap="gray")
+        ax.set_title(label, fontsize=9)
+        ax.axis("off")
+    plt.suptitle(f"Pipeline morfológico — {method_label}", fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
+
 def show_crops_gallery(crops: list[np.ndarray], features: list[dict], title: str) -> None:
     if not crops:
         return
@@ -626,6 +708,7 @@ def characterize_and_save(
     edges: np.ndarray,
     apply_filter: bool,
     out_root: Path,
+    morph_steps: dict[str, np.ndarray] | None = None,
 ):
     features, labels = compute_features(mask, gray)
     excluded: list[tuple[int, list[str]]] = []
@@ -633,7 +716,8 @@ def characterize_and_save(
         features, excluded = anatomical_filter(features, gray.shape)
     characterization = draw_characterization(gray, mask, features)
     crops = extract_crops(gray, labels, features)
-    save_outputs(out_root / name, edges, mask, characterization, crops, features)
+    save_outputs(out_root / name, edges, mask, characterization, crops, features,
+                 morph_steps)
     return features, labels, characterization, crops, excluded
 
 
@@ -667,23 +751,23 @@ def main() -> int:
     region_pack = kmeans_pack = None
 
     if args.method in ("region", "both"):
-        mask_r, candidates, grown, thr = segment_region(inverted, body)
+        mask_r, candidates, grown, thr, morph_r = segment_region(inverted, body)
         feats_r, labels_r, char_r, crops_r, excl_r = characterize_and_save(
-            "region", mask_r, gray, edges, args.filter_anatomy, out_root,
+            "region", mask_r, gray, edges, args.filter_anatomy, out_root, morph_r,
         )
         print_features_table("Region Growing", feats_r, excl_r)
-        region_pack = (mask_r, candidates, grown, thr, feats_r, char_r, crops_r)
+        region_pack = (mask_r, candidates, grown, thr, feats_r, char_r, crops_r, morph_r)
 
     if args.method in ("kmeans", "both"):
-        mask_k, raw_k, cluster_map, centers = segment_kmeans(gray, body)
+        mask_k, raw_k, cluster_map, centers, morph_k = segment_kmeans(gray, body)
         feats_k, labels_k, char_k, crops_k, excl_k = characterize_and_save(
-            "kmeans", mask_k, gray, edges, args.filter_anatomy, out_root,
+            "kmeans", mask_k, gray, edges, args.filter_anatomy, out_root, morph_k,
         )
         cluster_rgb = cluster_visual(cluster_map, body)
         print(f"\nK-Means centros (intensidad media, ordenado): "
               f"{['%.1f' % c for c in centers]}")
         print_features_table("K-Means", feats_k, excl_k)
-        kmeans_pack = (mask_k, raw_k, cluster_map, cluster_rgb, feats_k, char_k, crops_k)
+        kmeans_pack = (mask_k, raw_k, cluster_map, cluster_rgb, feats_k, char_k, crops_k, morph_k)
 
     print(f"\nSalidas escritas en: {out_root}/{{region,kmeans}}/")
 
@@ -691,24 +775,28 @@ def main() -> int:
         return 0
 
     if args.method == "region":
-        mask_r, candidates, grown, _, feats_r, char_r, crops_r = region_pack
+        mask_r, candidates, grown, _, feats_r, char_r, crops_r, morph_r = region_pack
         show_pipeline_single(gray, denoised, body, edges,
                              grown, "Region Growing (raw)",
                              mask_r, char_r, "Region Growing")
+        show_morphology_steps(morph_r, "Region Growing")
         show_crops_gallery(crops_r, feats_r, "Recortes — Region Growing")
 
     elif args.method == "kmeans":
-        mask_k, raw_k, cluster_map, cluster_rgb, feats_k, char_k, crops_k = kmeans_pack
+        mask_k, raw_k, cluster_map, cluster_rgb, feats_k, char_k, crops_k, morph_k = kmeans_pack
         show_pipeline_single(gray, denoised, body, edges,
                              cluster_rgb, f"K-Means (K={KMEANS_K})",
                              mask_k, char_k, "K-Means")
+        show_morphology_steps(morph_k, "K-Means")
         show_crops_gallery(crops_k, feats_k, "Recortes — K-Means")
 
     else:  # both
-        mask_r, _, _, _, feats_r, char_r, crops_r = region_pack
-        mask_k, _, _, cluster_rgb, feats_k, char_k, crops_k = kmeans_pack
+        mask_r, _, _, _, feats_r, char_r, crops_r, morph_r = region_pack
+        mask_k, _, _, cluster_rgb, feats_k, char_k, crops_k, morph_k = kmeans_pack
         show_methods_comparison(gray, edges, mask_r, char_r,
                                 mask_k, char_k, cluster_rgb)
+        show_morphology_steps(morph_r, "Region Growing")
+        show_morphology_steps(morph_k, "K-Means")
         show_crops_gallery(crops_r, feats_r, "Recortes — Region Growing")
         show_crops_gallery(crops_k, feats_k, "Recortes — K-Means")
 

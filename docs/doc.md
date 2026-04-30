@@ -113,31 +113,50 @@ Requiere al menos 5 puntos en el contorno. Para componentes más pequeños, los 
 
 ---
 
-## 5. Máscara binaria
+## 5. Máscara binaria — post-procesamiento morfológico
 
 > _Generar máscara binaria._
 
 ### ¿Qué se hizo?
 
-La máscara binaria es el resultado de la segmentación después de un post-procesamiento morfológico:
+La máscara binaria es el resultado de la segmentación después de un pipeline de **morfología matemática explícita** con erosión y dilatación:
 
 1. **Segmentación** (Region Growing o K-Means) → máscara cruda con ruido
-2. **Apertura morfológica** (kernel elíptico 3×3, 1 iteración) → elimina conexiones espurias y protuberancias finas
-3. **Cierre morfológico** (kernel elíptico 3×3, 2 iteraciones) → rellena huecos internos
-4. **Filtrado por área** (≥ 15 px) → descarta componentes demasiado pequeños para ser lesiones
+2. **Erosión explícita** (`cv2.erode`, kernel elíptico 3×3, 1 iteración) → elimina conexiones espurias entre regiones cercanas, separa tumores que se tocan por pocos píxeles y remueve ruido fino
+3. **Dilatación explícita** (`cv2.dilate`, kernel elíptico 3×3, 2 iteraciones) → recupera los bordes del tumor que la erosión removió. Al usar más iteraciones de dilatación que de erosión, se produce una **expansión neta** que captura píxeles de borde con menor captación metabólica, mejorando la cobertura de la lesión
+4. **Cierre morfológico** (kernel elíptico 3×3, 1 iteración) → sella huecos internos residuales que persistan tras la dilatación
+5. **Filtrado por área** (≥ 15 px) → descarta componentes demasiado pequeños para ser lesiones
+
+### ¿Por qué erosión y dilatación explícitas en lugar de apertura/cierre?
+
+Usar erosión y dilatación como operaciones independientes (en lugar de agruparlas en apertura/cierre) permite **controlar cada transformación por separado**:
+
+- **Erosión (1 iter):** actúa como filtro de separación. Elimina puentes de 1-2 píxeles entre regiones adyacentes y remueve artefactos de ruido sin destruir los tumores.
+- **Dilatación (2 iter):** actúa como filtro de recuperación y expansión. La asimetría intencional (más dilatación que erosión) produce una ganancia neta de ~1 píxel en el contorno de cada tumor, lo cual es deseable porque los píxeles de borde de una lesión suelen tener menor captación (transición gradual hacia tejido sano) y una segmentación estricta los puede perder.
+
+Con apertura + cierre, la erosión y dilatación están acopladas con la misma cantidad de iteraciones, lo que impide esta ganancia controlada.
+
+### Pipeline visualizado
+
+Cada paso se guarda como imagen individual en `resultados/<método>/morfologia/`:
+
+| Archivo | Contenido |
+|---------|-----------|
+| `raw.png` | Máscara directa de la segmentación (antes de cualquier morfología) |
+| `eroded.png` | Después de la erosión (regiones separadas, ruido eliminado) |
+| `dilated.png` | Después de la dilatación (bordes recuperados, expansión neta) |
+| `closed.png` | Después del cierre (huecos internos sellados) |
+| `filtered.png` | Máscara final (componentes < 15 px descartados) |
 
 ### Resultado
 
-- **Blanco (255):** píxeles que pertenecen a un objeto de interés (lesión)
+- **Blanco (255):** píxeles que pertenecen a un objeto de interés (lesión/tumor)
 - **Negro (0):** fondo (tejido normal + fondo de imagen)
-
-### ¿Por qué apertura antes que cierre?
-
-La apertura primero elimina píxeles sueltos que podrían crear "puentes" espurios entre componentes separados. Luego el cierre rellena huecos internos de las lesiones reales sin reconectar componentes que ya se separaron.
 
 ### Salida
 
-`resultados/<método>/mask_binary.png`
+- `resultados/<método>/mask_binary.png` — máscara final
+- `resultados/<método>/morfologia/` — imágenes de cada paso intermedio
 
 ---
 

@@ -1,10 +1,10 @@
-# Trabajo Práctico — Extracción y Caracterización de Objetos en PET
+# Trabajo Práctico — Extracción y Caracterización de Objetos en PET (con Morfología)
 
 **Materia:** Procesamiento de Imágenes I  
 **Integrantes:** Mateo Hernandez, Felipe Lucero  
-**Repositorio en GitHub:** [github.com/mateoHernandez123/Trabajo-Practico-PET-Procesamiento-de-Imagenes-1](https://github.com/mateoHernandez123/Trabajo-Practico-PET-Procesamiento-de-Imagenes-1)
+**Repositorio en GitHub:** [github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia](https://github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia)
 
-Este trabajo implementa un pipeline en Python: preprocesamiento (mediana + gaussiano), detección de bordes (Canny), segmentación con dos métodos intercambiables (Region Growing y K-Means), extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por objeto.
+Este trabajo implementa un pipeline en Python: preprocesamiento (mediana + gaussiano), detección de bordes (Canny), segmentación con dos métodos intercambiables (Region Growing y K-Means), **post-procesamiento morfológico con erosión y dilatación explícitas** para aislar tumores con mayor precisión, extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por objeto.
 
 ## Cómo ejecutar
 
@@ -49,7 +49,7 @@ Imagen PET de cuerpo completo utilizada como escena de interés. Las zonas oscur
   <img src="resultados/region/mask_binary.png" alt="Máscara binaria — Region Growing" width="200">
 </p>
 
-**Qué es:** máscara binaria obtenida por umbralización por percentil 90 + crecimiento de regiones (BFS con tolerancia 25) + post-procesamiento morfológico.  
+**Qué es:** máscara binaria obtenida por umbralización por percentil 90 + crecimiento de regiones (BFS con tolerancia 25) + post-procesamiento morfológico (erosión + dilatación).  
 **Qué justifica:** la segmentación por Region Growing permite controlar la tolerancia de crecimiento. Las regiones blancas son los objetos de interés detectados (lesiones con alta captación).
 
 ### 3. Máscara binaria — K-Means
@@ -58,8 +58,115 @@ Imagen PET de cuerpo completo utilizada como escena de interés. Las zonas oscur
   <img src="resultados/kmeans/mask_binary.png" alt="Máscara binaria — K-Means" width="200">
 </p>
 
-**Qué es:** máscara binaria obtenida por K-Means (K=4 clusters) seleccionando el cluster más oscuro (mayor captación metabólica) + post-procesamiento morfológico.  
+**Qué es:** máscara binaria obtenida por K-Means (K=4 clusters) seleccionando el cluster más oscuro (mayor captación metabólica) + post-procesamiento morfológico (erosión + dilatación).  
 **Qué justifica:** la segmentación por clustering no supervisado separa automáticamente niveles de intensidad sin requerir umbrales manuales.
+
+---
+
+## Pipeline morfológico (erosión + dilatación)
+
+Tras la segmentación, se aplica un pipeline de morfología matemática con **operaciones explícitas** para aislar los tumores con mayor precisión:
+
+| Paso | Operación | Efecto |
+|------|-----------|--------|
+| 1 | **Erosión** (kernel 3×3, 1 iter) | Separa regiones débilmente conectadas, elimina ruido fino |
+| 2 | **Dilatación** (kernel 3×3, 2 iter) | Recupera bordes del tumor; la asimetría intencional (2 iter vs 1) captura píxeles de borde con menor captación |
+| 3 | **Cierre** (kernel 3×3, 1 iter) | Sella huecos internos residuales |
+| 4 | **Filtro por área** (≥ 15 px) | Descarta artefactos pequeños |
+
+### Pasos morfológicos — Region Growing
+
+#### Máscara cruda (antes de morfología)
+
+<p align="center">
+  <img src="resultados/region/morfologia/raw.png" alt="Region Growing — máscara cruda" width="200">
+</p>
+
+**Qué es:** la máscara directa de la segmentación por Region Growing, sin ningún procesamiento morfológico.
+
+#### Después de erosión
+
+<p align="center">
+  <img src="resultados/region/morfologia/eroded.png" alt="Region Growing — después de erosión" width="200">
+</p>
+
+**Qué es:** resultado de aplicar `cv2.erode()` con kernel elíptico 3×3 (1 iteración).  
+**Efecto:** se eliminan conexiones espurias de pocos píxeles entre regiones adyacentes y se remueve ruido fino. Los tumores reales se contraen ligeramente pero mantienen su estructura.
+
+#### Después de dilatación
+
+<p align="center">
+  <img src="resultados/region/morfologia/dilated.png" alt="Region Growing — después de dilatación" width="200">
+</p>
+
+**Qué es:** resultado de aplicar `cv2.dilate()` con kernel elíptico 3×3 (2 iteraciones) sobre la imagen erosionada.  
+**Efecto:** recupera los bordes del tumor que la erosión removió y produce una **expansión neta de ~1 píxel** que captura píxeles de borde con menor captación metabólica.
+
+#### Después de cierre
+
+<p align="center">
+  <img src="resultados/region/morfologia/closed.png" alt="Region Growing — después de cierre" width="200">
+</p>
+
+**Qué es:** resultado del cierre morfológico (`cv2.morphologyEx` con `MORPH_CLOSE`, 1 iteración).  
+**Efecto:** sella huecos internos residuales dentro de los tumores.
+
+#### Máscara final (filtrada por área)
+
+<p align="center">
+  <img src="resultados/region/morfologia/filtered.png" alt="Region Growing — máscara final filtrada" width="200">
+</p>
+
+**Qué es:** máscara final tras descartar componentes conexos con área menor a 15 píxeles.  
+**Efecto:** elimina artefactos pequeños que no corresponden a lesiones reales.
+
+### Pasos morfológicos — K-Means
+
+#### Máscara cruda (antes de morfología)
+
+<p align="center">
+  <img src="resultados/kmeans/morfologia/raw.png" alt="K-Means — máscara cruda" width="200">
+</p>
+
+**Qué es:** la máscara directa de la segmentación por K-Means (cluster más oscuro), sin procesamiento morfológico.
+
+#### Después de erosión
+
+<p align="center">
+  <img src="resultados/kmeans/morfologia/eroded.png" alt="K-Means — después de erosión" width="200">
+</p>
+
+**Qué es:** resultado de aplicar `cv2.erode()` con kernel elíptico 3×3 (1 iteración).  
+**Efecto:** elimina las conexiones finas y el ruido que K-Means introduce al asignar píxeles aislados al cluster más oscuro.
+
+#### Después de dilatación
+
+<p align="center">
+  <img src="resultados/kmeans/morfologia/dilated.png" alt="K-Means — después de dilatación" width="200">
+</p>
+
+**Qué es:** resultado de aplicar `cv2.dilate()` con kernel elíptico 3×3 (2 iteraciones) sobre la imagen erosionada.  
+**Efecto:** recupera los bordes del tumor y expande ligeramente la región para capturar píxeles de transición.
+
+#### Después de cierre
+
+<p align="center">
+  <img src="resultados/kmeans/morfologia/closed.png" alt="K-Means — después de cierre" width="200">
+</p>
+
+**Qué es:** resultado del cierre morfológico (1 iteración).  
+**Efecto:** sella huecos internos residuales en las lesiones detectadas.
+
+#### Máscara final (filtrada por área)
+
+<p align="center">
+  <img src="resultados/kmeans/morfologia/filtered.png" alt="K-Means — máscara final filtrada" width="200">
+</p>
+
+**Qué es:** máscara final tras el filtrado por área mínima (≥ 15 px).  
+**Efecto:** solo quedan los componentes que corresponden a lesiones reales.
+
+---
 
 ### 4. Caracterización — Region Growing
 
@@ -114,40 +221,41 @@ Imagen PET de cuerpo completo utilizada como escena de interés. Las zonas oscur
 
 | ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h)  | Ejes M/m      | Orient.° | Excent. | Compact. | I. media |
 | --- | ---- | --------- | ---------------- | ------------------ | ------------- | -------- | ------- | -------- | -------- |
-| 1   | 209  | 52.87     | (76.7, 158.8)    | (68, 151, 18, 16)  | 17.77 / 13.51 | 118.69   | 0.650   | 0.940    | 13.9     |
-| 2   | 170  | 56.77     | (77.7, 179.1)    | (68, 170, 19, 18)  | 20.60 / 10.86 | 139.74   | 0.850   | 0.663    | 10.7     |
-| 3   | 149  | 49.80     | (107.2, 185.7)   | (102, 176, 11, 20) | 20.16 / 8.43  | 165.73   | 0.908   | 0.755    | 12.8     |
+| 1   | 258  | 58.53     | (76.7, 158.8)    | (67, 150, 20, 18)  | 19.65 / 15.28 | 119.16   | 0.629   | 0.946    | 19.7     |
+| 2   | 220  | 62.43     | (77.5, 178.9)    | (67, 169, 21, 20)  | 22.76 / 12.39 | 139.87   | 0.839   | 0.709    | 16.6     |
+| 3   | 197  | 55.46     | (107.1, 185.6)   | (101, 175, 13, 22) | 21.87 / 10.38 | 164.73   | 0.880   | 0.805    | 21.8     |
+| 4   | 18   | 13.31     | (51.0, 195.5)    | (49, 193, 5, 6)    | 4.54 / 3.95   | 0.00     | 0.494   | 1.276    | 30.0     |
 
 ### K-Means
 
-| ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m      | Orient.° | Excent. | Compact. | I. media |
-| --- | ---- | --------- | ---------------- | ----------------- | ------------- | -------- | ------- | -------- | -------- |
-| 1   | 217  | 72.18     | (106.8, 184.7)   | (99, 169, 15, 29) | 27.98 / 10.48 | 162.53   | 0.927   | 0.523    | 23.5     |
-| 2   | 31   | 20.73     | (50.3, 196.2)    | (48, 192, 6, 9)   | 8.42 / 4.04   | 11.17    | 0.877   | 0.907    | 33.5     |
-| 3   | 26   | 18.14     | (111.3, 202.5)   | (108, 200, 7, 6)  | 5.97 / 4.56   | 57.66    | 0.646   | 0.993    | 46.3     |
+| ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h)  | Ejes M/m      | Orient.° | Excent. | Compact. | I. media |
+| --- | ---- | --------- | ---------------- | ------------------ | ------------- | -------- | ------- | -------- | -------- |
+| 1   | 326  | 104.47    | (107.2, 186.8)   | (98, 168, 18, 39)  | 35.70 / 11.93 | 164.32   | 0.943   | 0.375    | 49.3     |
+| 2   | 52   | 26.38     | (50.2, 196.2)    | (47, 191, 8, 11)   | 9.83 / 5.88   | 10.51    | 0.802   | 0.939    | 67.0     |
 
 ---
 
 ## Estructura del proyecto
 
-| Ruta               | Contenido                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| `README.md`        | Este archivo: resumen, figuras y estructura                                          |
-| `segment_pet.py`   | Pipeline único: preprocesamiento, bordes, segmentación, features, máscaras, recortes |
-| `requirements.txt` | Dependencias (numpy, opencv-python, matplotlib)                                      |
-| `imagenes/`        | Carpeta de entrada; por defecto `pet_cuerpo_completo.png`                            |
-| `resultados/`      | PNG, CSV y recortes generados al ejecutar                                            |
-| `docs/Readme.md`   | Instalación, entorno virtual y salidas                                               |
-| `docs/doc.md`      | Informe / respuestas a la consigna                                                   |
-| `.gitignore`       | Excluye venv/, cachés de Python e ignorados de IDE                                   |
+| Ruta                         | Contenido                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| `README.md`                  | Este archivo: resumen, figuras y estructura                                                      |
+| `segment_pet.py`             | Pipeline único: preprocesamiento, bordes, segmentación, morfología, features, máscaras, recortes |
+| `requirements.txt`           | Dependencias (numpy, opencv-python, matplotlib)                                                  |
+| `imagenes/`                  | Carpeta de entrada; por defecto `pet_cuerpo_completo.png`                                        |
+| `resultados/`                | PNG, CSV, recortes y pasos morfológicos generados al ejecutar                                    |
+| `resultados/<m>/morfologia/` | Imágenes intermedias de erosión, dilatación, cierre y filtrado                                   |
+| `docs/Readme.md`             | Instalación, entorno virtual y salidas                                                           |
+| `docs/doc.md`                | Informe / respuestas a la consigna                                                               |
+| `.gitignore`                 | Excluye venv/, cachés de Python e ignorados de IDE                                               |
 
-Parámetros útiles en código: `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `CANNY_LOW`/`CANNY_HIGH`, `CROP_PAD`, `MAX_OBJECT_AREA` en `segment_pet.py`.
+Parámetros útiles en código: `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL`, `ERODE_ITERATIONS`, `DILATE_KERNEL`, `DILATE_ITERATIONS`, `MORPH_KERNEL`, `CANNY_LOW`/`CANNY_HIGH`, `CROP_PAD`, `MAX_OBJECT_AREA` en `segment_pet.py`.
 
 ---
 
 ## Clonar o actualizar desde GitHub
 
 ```bash
-git clone git@github.com:mateoHernandez123/Trabajo-Practico-PET-Procesamiento-de-Imagenes-1.git
-cd Trabajo-Practico-PET-Procesamiento-de-Imagenes-1
+git clone git@github.com:mateoHernandez123/Trabajo-Practico-PET-Morfologia.git
+cd Trabajo-Practico-PET-Morfologia
 ```

@@ -100,9 +100,15 @@ Todas las salidas se guardan en `resultados/`:
 resultados/
 ├── region/
 │   ├── edges.png              # Bordes (Canny)
-│   ├── mask_binary.png        # Máscara binaria
+│   ├── mask_binary.png        # Máscara binaria final
 │   ├── characterization.png   # BBox + centroide + ID
 │   ├── features.csv           # Tabla de features
+│   ├── morfologia/            # Pasos intermedios de morfología
+│   │   ├── raw.png            # Máscara cruda (antes de morfología)
+│   │   ├── eroded.png         # Después de erosión
+│   │   ├── dilated.png        # Después de dilatación
+│   │   ├── closed.png         # Después de cierre
+│   │   └── filtered.png       # Después de filtrado por área
 │   └── crops/                 # Recortes individuales
 │       ├── object_01.png
 │       └── ...
@@ -111,6 +117,12 @@ resultados/
     ├── mask_binary.png
     ├── characterization.png
     ├── features.csv
+    ├── morfologia/
+    │   ├── raw.png
+    │   ├── eroded.png
+    │   ├── dilated.png
+    │   ├── closed.png
+    │   └── filtered.png
     └── crops/
         ├── object_01.png
         └── ...
@@ -139,6 +151,11 @@ Las constantes al inicio de `segment_pet.py` permiten calibrar el pipeline sin m
 | `REGION_GROW_TOLERANCE`    | 25       | Tolerancia de intensidad para BFS          |
 | `KMEANS_K`                 | 4        | Número de clusters                         |
 | `MIN_LESION_AREA`          | 15       | Área mínima (px) para conservar componente |
+| `MORPH_KERNEL`             | 3        | Tamaño del kernel de cierre final          |
+| `ERODE_KERNEL`             | 3        | Tamaño del kernel de erosión               |
+| `ERODE_ITERATIONS`         | 1        | Iteraciones de erosión                     |
+| `DILATE_KERNEL`            | 3        | Tamaño del kernel de dilatación            |
+| `DILATE_ITERATIONS`        | 2        | Iteraciones de dilatación                  |
 | `CANNY_LOW` / `CANNY_HIGH` | 40 / 120 | Umbrales de Canny                          |
 | `CROP_PAD`                 | 4        | Margen alrededor de cada recorte           |
 | `MAX_OBJECT_AREA`          | 500      | Área máxima para filtro anatómico          |
