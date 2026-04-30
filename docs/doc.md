@@ -119,22 +119,44 @@ Requiere al menos 5 puntos en el contorno. Para componentes más pequeños, los 
 
 ### ¿Qué se hizo?
 
-La máscara binaria es el resultado de la segmentación después de un pipeline de **morfología matemática explícita** con erosión y dilatación:
+La máscara binaria es el resultado de la segmentación después de un pipeline de **morfología matemática explícita** con erosión, dilatación y **filtro por forma**:
 
-1. **Segmentación** (Region Growing o K-Means) → máscara cruda con ruido
-2. **Erosión explícita** (`cv2.erode`, kernel elíptico 3×3, 1 iteración) → elimina conexiones espurias entre regiones cercanas, separa tumores que se tocan por pocos píxeles y remueve ruido fino
-3. **Dilatación explícita** (`cv2.dilate`, kernel elíptico 3×3, 2 iteraciones) → recupera los bordes del tumor que la erosión removió. Al usar más iteraciones de dilatación que de erosión, se produce una **expansión neta** que captura píxeles de borde con menor captación metabólica, mejorando la cobertura de la lesión
-4. **Cierre morfológico** (kernel elíptico 3×3, 1 iteración) → sella huecos internos residuales que persistan tras la dilatación
+1. **Segmentación** (Region Growing o K-Means) → máscara cruda con ruido y captación fisiológica (cerebro, órganos)
+2. **Erosión explícita** (`cv2.erode`, kernel elíptico 3×3, 2 iteraciones) → elimina conexiones espurias, separa tumores que se tocan, remueve ruido fino y elimina blobs pequeños de captación fisiológica (como el cerebro en Region Growing, que es un blob chico y no sobrevive 2 iteraciones de erosión)
+3. **Dilatación explícita** (`cv2.dilate`, kernel elíptico 3×3, 3 iteraciones) → recupera los bordes del tumor que la erosión removió. Al usar más iteraciones de dilatación que de erosión (3 vs 2), se produce una **expansión neta de ~1 píxel** que captura píxeles de borde con menor captación metabólica
+4. **Cierre morfológico** (kernel elíptico 3×3, 1 iteración) → sella huecos internos residuales
 5. **Filtrado por área** (≥ 15 px) → descarta componentes demasiado pequeños para ser lesiones
+6. **Filtro por forma** → descarta componentes con perfil de **órgano** (grandes + compactos + sólidos), como el cerebro en K-Means que es demasiado grande para que la erosión lo elimine
 
-### ¿Por qué erosión y dilatación explícitas en lugar de apertura/cierre?
+### ¿Por qué erosión y dilatación explícitas?
 
-Usar erosión y dilatación como operaciones independientes (en lugar de agruparlas en apertura/cierre) permite **controlar cada transformación por separado**:
+Usar erosión y dilatación como operaciones independientes permite **controlar cada transformación por separado**:
 
-- **Erosión (1 iter):** actúa como filtro de separación. Elimina puentes de 1-2 píxeles entre regiones adyacentes y remueve artefactos de ruido sin destruir los tumores.
-- **Dilatación (2 iter):** actúa como filtro de recuperación y expansión. La asimetría intencional (más dilatación que erosión) produce una ganancia neta de ~1 píxel en el contorno de cada tumor, lo cual es deseable porque los píxeles de borde de una lesión suelen tener menor captación (transición gradual hacia tejido sano) y una segmentación estricta los puede perder.
+- **Erosión (2 iter):** actúa como filtro de separación y limpieza. Elimina puentes de 1-3 píxeles entre regiones adyacentes, remueve ruido y destruye blobs pequeños de captación fisiológica. Los tumores reales son suficientemente grandes para sobrevivir.
+- **Dilatación (3 iter):** actúa como filtro de recuperación y expansión. La asimetría intencional (3 iter dilatación vs 2 iter erosión) produce una ganancia neta de ~1 píxel, deseable porque los píxeles de borde suelen tener menor captación.
 
-Con apertura + cierre, la erosión y dilatación están acopladas con la misma cantidad de iteraciones, lo que impide esta ganancia controlada.
+### Filtro por forma — discriminación órgano vs tumor
+
+El cerebro, hígado y riñones presentan captación fisiológica normal en PET que NO es patológica. Para distinguirlos de tumores sin depender de la posición (el tumor puede estar en cualquier parte del cuerpo), se analizan **métricas de forma** de cada componente:
+
+| Métrica | Fórmula | Órganos | Tumores |
+|---------|---------|---------|---------|
+| **Compacidad** | \( 4\pi A / P^2 \) | Alta (> 0.40): forma redondeada | Variable: bordes irregulares |
+| **Solidez** | \( A / A_{convex\_hull} \) | Alta (> 0.65): contorno suave | Variable: más concavidades |
+| **Área** | Conteo de píxeles | Grande (> 350 px) | Menor |
+
+Un componente se clasifica como **órgano** (y se descarta) si cumple **todas** estas condiciones:
+- Área > 350 px
+- Compacidad > 0.40
+- Solidez > 0.65
+
+Componentes con área ≤ 350 px se conservan sin análisis de forma (son demasiado pequeños para ser órganos).
+
+### ¿Por qué funciona?
+
+- **Cerebro:** región grande, redondeada (alta compacidad), contorno suave (alta solidez) → se descarta.
+- **Tumor:** puede ser grande pero tiene bordes irregulares (baja compacidad) o concavidades (baja solidez) → se conserva.
+- **Independiente de posición:** no importa si el tumor está en la cabeza, tronco o piernas. La discriminación es puramente por forma.
 
 ### Pipeline visualizado
 
@@ -143,19 +165,20 @@ Cada paso se guarda como imagen individual en `resultados/<método>/morfologia/`
 | Archivo | Contenido |
 |---------|-----------|
 | `raw.png` | Máscara directa de la segmentación (antes de cualquier morfología) |
-| `eroded.png` | Después de la erosión (regiones separadas, ruido eliminado) |
+| `eroded.png` | Después de la erosión (regiones separadas, cerebro chico eliminado) |
 | `dilated.png` | Después de la dilatación (bordes recuperados, expansión neta) |
 | `closed.png` | Después del cierre (huecos internos sellados) |
-| `filtered.png` | Máscara final (componentes < 15 px descartados) |
+| `area_filtered.png` | Después del filtro por área (componentes < 15 px descartados) |
+| `shape_filtered.png` | Máscara final (órganos descartados por forma) |
 
 ### Resultado
 
 - **Blanco (255):** píxeles que pertenecen a un objeto de interés (lesión/tumor)
-- **Negro (0):** fondo (tejido normal + fondo de imagen)
+- **Negro (0):** fondo (tejido normal + órganos con captación fisiológica + fondo de imagen)
 
 ### Salida
 
-- `resultados/<método>/mask_binary.png` — máscara final
+- `resultados/<método>/mask_binary.png` — máscara final (solo tumores)
 - `resultados/<método>/morfologia/` — imágenes de cada paso intermedio
 
 ---

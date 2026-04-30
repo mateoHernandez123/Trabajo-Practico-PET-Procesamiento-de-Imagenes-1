@@ -108,7 +108,8 @@ resultados/
 │   │   ├── eroded.png         # Después de erosión
 │   │   ├── dilated.png        # Después de dilatación
 │   │   ├── closed.png         # Después de cierre
-│   │   └── filtered.png       # Después de filtrado por área
+│   │   ├── area_filtered.png  # Después de filtrado por área
+│   │   └── shape_filtered.png # Después de filtro por forma (sin órganos)
 │   └── crops/                 # Recortes individuales
 │       ├── object_01.png
 │       └── ...
@@ -122,7 +123,8 @@ resultados/
     │   ├── eroded.png
     │   ├── dilated.png
     │   ├── closed.png
-    │   └── filtered.png
+    │   ├── area_filtered.png
+    │   └── shape_filtered.png
     └── crops/
         ├── object_01.png
         └── ...
@@ -153,9 +155,12 @@ Las constantes al inicio de `segment_pet.py` permiten calibrar el pipeline sin m
 | `MIN_LESION_AREA`          | 15       | Área mínima (px) para conservar componente |
 | `MORPH_KERNEL`             | 3        | Tamaño del kernel de cierre final          |
 | `ERODE_KERNEL`             | 3        | Tamaño del kernel de erosión               |
-| `ERODE_ITERATIONS`         | 1        | Iteraciones de erosión                     |
+| `ERODE_ITERATIONS`         | 2        | Iteraciones de erosión                     |
 | `DILATE_KERNEL`            | 3        | Tamaño del kernel de dilatación            |
-| `DILATE_ITERATIONS`        | 2        | Iteraciones de dilatación                  |
+| `DILATE_ITERATIONS`        | 3        | Iteraciones de dilatación                  |
+| `ORGAN_MIN_AREA`           | 350      | Área mínima para evaluar si es órgano      |
+| `ORGAN_MIN_COMPACTNESS`    | 0.40     | Compacidad mínima para perfil de órgano    |
+| `ORGAN_MIN_SOLIDITY`       | 0.65     | Solidez mínima para perfil de órgano       |
 | `CANNY_LOW` / `CANNY_HIGH` | 40 / 120 | Umbrales de Canny                          |
 | `CROP_PAD`                 | 4        | Margen alrededor de cada recorte           |
 | `MAX_OBJECT_AREA`          | 500      | Área máxima para filtro anatómico          |

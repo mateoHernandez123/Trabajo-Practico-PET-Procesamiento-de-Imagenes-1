@@ -18,11 +18,14 @@ Ofrece DOS métodos de segmentación intercambiables (--method):
 
 Post-procesamiento morfológico:
     Tras la segmentación, se aplica un pipeline de morfología explícita:
-        1. Erosión  — separa regiones débilmente conectadas y elimina ruido.
+        1. Erosión  — separa regiones débilmente conectadas y elimina ruido
+           y blobs pequeños de captación fisiológica (ej. cerebro).
         2. Dilatación — recupera los bordes del tumor (más iteraciones que la
            erosión para capturar píxeles de borde con menor captación).
         3. Cierre — sella huecos internos residuales.
         4. Filtro por área — descarta componentes menores al umbral.
+        5. Filtro por forma — descarta componentes con perfil de órgano
+           (grandes + compactos + sólidos) usando compacidad y solidez.
     Se generan imágenes intermedias de cada paso en resultados/<método>/morfologia/.
 
 Filtro anatómico opcional (--filter-anatomy):
@@ -66,11 +69,20 @@ CROP_PAD = 4                   # Margen alrededor de cada recorte
 
 # Morfología explícita (erosión + dilatación)
 ERODE_KERNEL = 3               # Tamaño del kernel de erosión
-ERODE_ITERATIONS = 1           # Iteraciones de erosión (separa regiones, elimina ruido)
+ERODE_ITERATIONS = 2           # Iteraciones de erosión (separa regiones, elimina ruido)
 DILATE_KERNEL = 3              # Tamaño del kernel de dilatación
-DILATE_ITERATIONS = 2          # Iteraciones de dilatación (recupera bordes del tumor)
+DILATE_ITERATIONS = 3          # Iteraciones de dilatación (recupera bordes del tumor)
 
-# Filtro anatómico (heurístico)
+# Filtro por forma (discriminación órgano vs tumor)
+# Un componente se clasifica como órgano si cumple TODAS estas condiciones:
+#   área > ORGAN_MIN_AREA  AND  compacidad > ORGAN_MIN_COMPACTNESS  AND  solidez > ORGAN_MIN_SOLIDITY
+# Órganos (cerebro, hígado): grandes, redondeados, contorno suave
+# Tumores: más pequeños y/o bordes irregulares
+ORGAN_MIN_AREA = 350           # Área mínima (px) para evaluar si es órgano
+ORGAN_MIN_COMPACTNESS = 0.40   # Compacidad mínima (4πA/P²) para perfil de órgano
+ORGAN_MIN_SOLIDITY = 0.65      # Solidez mínima (área/convex_hull) para perfil de órgano
+
+# Filtro anatómico (heurístico, opcional con --filter-anatomy)
 EXCLUDE_TOP_FRACTION = 0.30    # Centroides en el 30% superior → cabeza
 EXCLUDE_BOTTOM_FRACTION = 0.93 # Centroides en el 7% inferior → vejiga
 MAX_OBJECT_AREA = 500          # Componentes > este área → órganos (no lesión)
@@ -273,16 +285,76 @@ def segment_kmeans(
 # Post-procesamiento común
 # ---------------------------------------------------------------------------
 
+def shape_filter(
+    mask: np.ndarray,
+) -> tuple[np.ndarray, list[dict]]:
+    """Elimina componentes con perfil de órgano (grandes + compactos + sólidos).
+
+    Los órganos (cerebro, hígado, riñones) en PET presentan captación
+    fisiológica que NO es patológica.  Se distinguen de los tumores por:
+        - Área grande (> ORGAN_MIN_AREA)
+        - Alta compacidad (forma redondeada, 4πA/P² alto)
+        - Alta solidez (contorno suave, pocos huecos → área ≈ convex hull)
+
+    Los tumores, incluso los grandes, tienden a tener bordes más irregulares
+    (menor compacidad y/o menor solidez) que los órganos sanos.
+
+    Componentes con área ≤ ORGAN_MIN_AREA se conservan sin análisis de forma.
+    """
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    result = np.zeros_like(mask)
+    removed: list[dict] = []
+
+    for i in range(1, num):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if area < MIN_LESION_AREA:
+            continue
+
+        if area <= ORGAN_MIN_AREA:
+            result[labels == i] = 255
+            continue
+
+        component = (labels == i).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(component, cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_NONE)
+        if not contours:
+            continue
+        cnt = max(contours, key=cv2.contourArea)
+        perimeter = cv2.arcLength(cnt, closed=True)
+        compactness = (4 * math.pi * area / perimeter ** 2) if perimeter > 0 else 0.0
+
+        hull = cv2.convexHull(cnt)
+        hull_area = cv2.contourArea(hull)
+        solidity = area / hull_area if hull_area > 0 else 0.0
+
+        is_organ = (compactness > ORGAN_MIN_COMPACTNESS
+                    and solidity > ORGAN_MIN_SOLIDITY)
+
+        if is_organ:
+            removed.append({
+                "label": i, "area": area,
+                "compactness": round(compactness, 3),
+                "solidity": round(solidity, 3),
+            })
+        else:
+            result[labels == i] = 255
+
+    return result, removed
+
+
 def postprocess(mask: np.ndarray) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-    """Limpieza morfológica con erosión y dilatación explícitas.
+    """Limpieza morfológica con erosión y dilatación explícitas + filtro por forma.
 
     Pipeline:
-        1. Erosión — elimina conexiones espurias y ruido fino.
+        1. Erosión — elimina conexiones espurias, ruido fino y blobs pequeños
+           de captación fisiológica (p.ej. cerebro en Region Growing).
         2. Dilatación — recupera los bordes del tumor y rellena micro-huecos.
            Usar más iteraciones de dilatación que de erosión produce una
            expansión neta que captura píxeles de borde con menor captación.
         3. Cierre — sella huecos internos que persistan tras la dilatación.
         4. Filtro por área — descarta componentes menores a MIN_LESION_AREA.
+        5. Filtro por forma — descarta componentes con perfil de órgano
+           (grandes + compactos + sólidos), como el cerebro en K-Means.
 
     Retorna (máscara_final, diccionario_de_pasos_intermedios).
     """
@@ -308,13 +380,23 @@ def postprocess(mask: np.ndarray) -> tuple[np.ndarray, dict[str, np.ndarray]]:
 
     # 4. Filtro por área mínima
     num, labels, stats, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
-    filtered = np.zeros_like(closed)
+    area_filtered = np.zeros_like(closed)
     for i in range(1, num):
         if stats[i, cv2.CC_STAT_AREA] >= MIN_LESION_AREA:
-            filtered[labels == i] = 255
-    steps["filtered"] = filtered.copy()
+            area_filtered[labels == i] = 255
+    steps["area_filtered"] = area_filtered.copy()
 
-    return filtered, steps
+    # 5. Filtro por forma (descarta órganos: grandes + compactos + sólidos)
+    shape_filtered, removed = shape_filter(area_filtered)
+    steps["shape_filtered"] = shape_filtered.copy()
+
+    if removed:
+        print(f"  Filtro por forma: {len(removed)} componente(s) descartado(s) como órgano:")
+        for r in removed:
+            print(f"    - área={r['area']}px  compacidad={r['compactness']}  "
+                  f"solidez={r['solidity']}")
+
+    return shape_filtered, steps
 
 
 # ---------------------------------------------------------------------------
@@ -656,18 +738,19 @@ def show_morphology_steps(
     steps: dict[str, np.ndarray],
     method_label: str,
 ) -> None:
-    """Muestra los pasos intermedios de la morfología: raw → erosión → dilatación → cierre → filtrado."""
+    """Muestra los pasos intermedios de la morfología: raw → erosión → dilatación → cierre → filtro área → filtro forma."""
     titles = [
-        ("raw",      "1. Máscara cruda\n(segmentación)"),
-        ("eroded",   f"2. Erosión\n(kernel {ERODE_KERNEL}×{ERODE_KERNEL}, "
-                     f"{ERODE_ITERATIONS} iter)"),
-        ("dilated",  f"3. Dilatación\n(kernel {DILATE_KERNEL}×{DILATE_KERNEL}, "
-                     f"{DILATE_ITERATIONS} iter)"),
-        ("closed",   f"4. Cierre\n(kernel {MORPH_KERNEL}×{MORPH_KERNEL}, 1 iter)"),
-        ("filtered", f"5. Filtrado por área\n(≥ {MIN_LESION_AREA} px)"),
+        ("raw",            "1. Máscara cruda\n(segmentación)"),
+        ("eroded",         f"2. Erosión\n(kernel {ERODE_KERNEL}×{ERODE_KERNEL}, "
+                           f"{ERODE_ITERATIONS} iter)"),
+        ("dilated",        f"3. Dilatación\n(kernel {DILATE_KERNEL}×{DILATE_KERNEL}, "
+                           f"{DILATE_ITERATIONS} iter)"),
+        ("closed",         f"4. Cierre\n(kernel {MORPH_KERNEL}×{MORPH_KERNEL}, 1 iter)"),
+        ("area_filtered",  f"5. Filtro por área\n(≥ {MIN_LESION_AREA} px)"),
+        ("shape_filtered", "6. Filtro por forma\n(descarta órganos)"),
     ]
     n = len(titles)
-    fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 4))
+    fig, axes = plt.subplots(1, n, figsize=(3.2 * n, 4))
     for ax, (key, label) in zip(axes, titles):
         ax.imshow(steps[key], cmap="gray")
         ax.set_title(label, fontsize=9)
