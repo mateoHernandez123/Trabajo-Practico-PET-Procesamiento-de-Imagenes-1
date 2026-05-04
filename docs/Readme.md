@@ -55,6 +55,7 @@ Paquetes utilizados:
 | `numpy`         | Operaciones matriciales y cálculos numéricos                                  |
 | `opencv-python` | Lectura de imágenes, filtros, morfología, Canny, K-Means, componentes conexas |
 | `matplotlib`    | Visualización del pipeline y galería de recortes                              |
+| `scikit-image`  | SuperPixel SLIC (segmentación MRI cerebral)                                   |
 
 ---
 
@@ -140,6 +141,80 @@ resultados/
 | `--method`         | `region` \| `kmeans` \| `both` | `both`                             | Método de segmentación             |
 | `--filter-anatomy` | flag                           | desactivado                        | Activa filtro heurístico anatómico |
 | `--no-show`        | flag                           | desactivado                        | No abre ventanas de matplotlib     |
+
+---
+
+---
+
+## Descargar el dataset de MRI cerebral
+
+El script `segment_brain_mri.py` requiere el [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset):
+
+```bash
+mkdir -p dataset
+wget -O dataset/brain-tumor-mri-dataset.zip \
+  "https://zenodo.org/records/12735702/files/brain-tumor-mri-dataset.zip?download=1"
+cd dataset && unzip brain-tumor-mri-dataset.zip && cd ..
+```
+
+Estructura resultante:
+
+```
+dataset/
+├── Training/
+│   ├── glioma/      (1,321 imágenes)
+│   ├── meningioma/  (1,339 imágenes)
+│   ├── notumor/     (1,595 imágenes)
+│   └── pituitary/   (1,457 imágenes)
+└── Testing/
+    ├── glioma/      (300 imágenes)
+    ├── meningioma/  (306 imágenes)
+    ├── notumor/     (405 imágenes)
+    └── pituitary/   (300 imágenes)
+```
+
+---
+
+## Ejecutar el script de MRI cerebral
+
+```bash
+# Una imagen, todos los métodos (K-Means + SuperPixel + Region Growing):
+python3 segment_brain_mri.py dataset/Testing/glioma/Te-gl_0010.jpg
+
+# Solo SuperPixel:
+python3 segment_brain_mri.py dataset/Testing/glioma/Te-gl_0010.jpg --method superpixel
+
+# Batch (10 imágenes de meningioma, sin plots):
+python3 segment_brain_mri.py dataset/Testing/meningioma/ --batch --max-images 10 --no-show
+
+# Todo el testing:
+python3 segment_brain_mri.py dataset/Testing/ --batch --no-show
+```
+
+### Argumentos del CLI — MRI cerebral
+
+| Argumento       | Tipo                                         | Default | Descripción                             |
+| --------------- | -------------------------------------------- | ------- | --------------------------------------- |
+| `path`          | posicional                                   | —       | Ruta a imagen o directorio              |
+| `--method`      | `kmeans` \| `superpixel` \| `region` \| `all`| `all`   | Método de segmentación                  |
+| `--batch`       | flag                                         | off     | Procesar todas las imágenes del dir     |
+| `--max-images`  | entero                                       | 0       | Límite en modo batch (0 = sin límite)   |
+| `--no-show`     | flag                                         | off     | No abre ventanas de matplotlib          |
+
+### Salidas generadas — MRI cerebral
+
+Se guardan en `resultados_mri/<categoría>/<imagen>/<método>/`:
+
+- `edges.png` — bordes (Canny)
+- `mask_binary.png` — máscara binaria final
+- `characterization.png` — BBox + centroide + ID de cada tumor
+- `features.csv` — features geométricas de cada tumor
+- `morfologia/` — pasos intermedios (raw, eroded, dilated, closed, area_filtered, shape_filtered)
+- `crops/` — recorte individual por tumor detectado
+- `cluster_visual.png` (K-Means) — clusters coloreados
+- `superpixel_boundaries.png` (SuperPixel) — fronteras SLIC
+
+En modo batch se genera además `resultados_mri/resumen_batch.csv` con el conteo de tumores por imagen y método.
 
 ---
 

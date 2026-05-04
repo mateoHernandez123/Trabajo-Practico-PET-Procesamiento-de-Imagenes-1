@@ -19,6 +19,10 @@ env/
 *.swo
 *~
 
+# Dataset (descargar con el script o desde Zenodo)
+dataset/
+resultados_mri/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,16 +1,31 @@
-# Trabajo Práctico — Extracción y Caracterización de Objetos en PET (con Morfología)
+# Trabajo Práctico — Procesamiento de Imágenes Médicas (PET + MRI Cerebral)
 
 **Materia:** Procesamiento de Imágenes I  
 **Integrantes:** Mateo Hernandez, Felipe Lucero  
 **Repositorio en GitHub:** [github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia](https://github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia)
 
-Este trabajo implementa un pipeline en Python: preprocesamiento (mediana + gaussiano), detección de bordes (Canny), segmentación con dos métodos intercambiables (Region Growing y K-Means), **post-procesamiento morfológico con erosión y dilatación explícitas** y **filtro por forma** para aislar tumores descartando captación fisiológica (cerebro, órganos), extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por objeto.
+Este trabajo implementa dos pipelines de procesamiento de imágenes médicas:
+
+1. **PET de cuerpo completo** (`segment_pet.py`): segmentación con Region Growing y K-Means sobre imágenes PET.
+2. **MRI cerebral — detección de tumores** (`segment_brain_mri.py`): segmentación con **K-Means**, **SuperPixel SLIC + Clustering** y **Region Growing** sobre el dataset [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) (7,023 imágenes: glioma, meningioma, pituitary, no tumor).
+
+Ambos pipelines comparten: preprocesamiento, detección de bordes (Canny), **post-procesamiento morfológico con erosión y dilatación explícitas**, **filtro por forma**, extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por tumor.
 
 ## Cómo ejecutar
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+
+# PET cuerpo completo
 python3 segment_pet.py
+
+# MRI cerebral — una imagen
+python3 segment_brain_mri.py dataset/Testing/glioma/Te-gl_0010.jpg
+
+# MRI cerebral — batch (15 imágenes)
+python3 segment_brain_mri.py dataset/Testing/ --batch --max-images 15 --no-show
 ```
 
 Instrucciones detalladas (venv, Windows/Linux, Git Bash): [docs/Readme.md](docs/Readme.md).  
@@ -190,21 +205,165 @@ De izquierda a derecha: máscara cruda (cerebro enorme) → erosión → dilatac
 
 ---
 
+---
+
+## MRI Cerebral — Detección de Tumores (`segment_brain_mri.py`)
+
+### Dataset
+
+[Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) — 7,023 imágenes en 4 categorías:
+
+| Categoría   | Training | Testing | Total |
+|-------------|----------|---------|-------|
+| Glioma      | 1,321    | 300     | 1,621 |
+| Meningioma  | 1,339    | 306     | 1,645 |
+| Pituitary   | 1,457    | 300     | 1,757 |
+| No tumor    | 1,595    | 405     | 2,000 |
+
+Descarga automática desde [Zenodo](https://zenodo.org/records/12735702):
+
+```bash
+mkdir -p dataset
+wget -O dataset/brain-tumor-mri-dataset.zip \
+  "https://zenodo.org/records/12735702/files/brain-tumor-mri-dataset.zip?download=1"
+cd dataset && unzip brain-tumor-mri-dataset.zip
+```
+
+### Pipeline de procesamiento
+
+```
+Imagen MRI → CLAHE + Gaussiano → Máscara cerebral (Otsu) → Canny (bordes)
+         ↓
+    ┌────┴─────────────────┬────────────────────────┐
+    │                      │                         │
+ K-Means            SuperPixel SLIC          Region Growing
+ (K=4, cluster     (200 SP → features →      (percentil 85%
+  más brillante)    K-Means ponderado)        + BFS tol=20)
+    │                      │                         │
+    └──────────┬───────────┴─────────────────────────┘
+               ↓
+    Post-procesamiento morfológico:
+      Erosión → Dilatación → Cierre → Filtro área → Filtro forma
+               ↓
+    Caracterización (features) + Crops + CSV
+```
+
+### Tres métodos de segmentación
+
+| Método | Técnica | Detalle |
+|--------|---------|---------|
+| **K-Means** | Clustering directo en intensidades | K=4 clusters; selecciona el más brillante (tumor en MRI con contraste) |
+| **SuperPixel (SLIC) + Clustering** | SLIC genera ~200 superpíxeles → features por SP (intensidad, std, gradiente Sobel, posición) → K-Means ponderado (6 clusters) | Detecta regiones tumorales con intensidad > media cerebral + 0.8·σ, respetando bordes naturales |
+| **Region Growing** | Semillas desde percentil 85% de intensidad dentro del cerebro → BFS 8-vecinos con tolerancia 20 | Crecimiento adaptativo desde las zonas más brillantes |
+
+### Resultados de ejecución
+
+Procesamiento de 35 imágenes (15 glioma, 10 meningioma, 10 pituitary):
+
+#### Detección por categoría
+
+| Categoría | Método | Tasa detección | Tumores/imagen (media) | Área media (px) |
+|-----------|--------|---------------|----------------------|----------------|
+| **Glioma** (15 img) | K-Means | 100% (15/15) | 4.3 | 7,962 |
+| | SuperPixel | 100% (15/15) | 4.1 | 7,594 |
+| | Region Growing | 73% (11/15) | 2.1 | 9,831 |
+| **Meningioma** (10 img) | K-Means | 100% (10/10) | 5.0 | 16,951 |
+| | SuperPixel | 90% (9/10) | 4.0 | 8,346 |
+| | Region Growing | 100% (10/10) | 3.7 | 19,466 |
+| **Pituitary** (10 img) | K-Means | 100% (10/10) | 4.9 | 14,012 |
+| | SuperPixel | 100% (10/10) | 4.8 | 11,353 |
+| | Region Growing | 90% (9/10) | 3.3 | 20,652 |
+
+#### Totales
+
+| Método | Tumores totales | Imágenes con detección |
+|--------|----------------|----------------------|
+| K-Means | 164 | 35/35 (100%) |
+| SuperPixel (SLIC) | 149 | 34/35 (97%) |
+| Region Growing | 102 | 30/35 (86%) |
+
+#### Ejemplo: imágenes de glioma (Te-gl_0010 a Te-gl_0013)
+
+| Imagen | K-Means | SuperPixel | Region Growing |
+|--------|---------|------------|----------------|
+| Te-gl_0010.jpg | 6 tumores | 5 tumores | 3 tumores |
+| Te-gl_0011.jpg | 1 tumor | 4 tumores | 7 tumores |
+| Te-gl_0012.jpg | 5 tumores | 7 tumores | 1 tumor |
+| Te-gl_0013.jpg | 3 tumores | 4 tumores | 1 tumor |
+
+### Uso
+
+```bash
+# Una sola imagen, los 3 métodos, con visualización:
+python3 segment_brain_mri.py dataset/Testing/glioma/Te-gl_0010.jpg
+
+# Solo SuperPixel:
+python3 segment_brain_mri.py dataset/Testing/glioma/Te-gl_0010.jpg --method superpixel
+
+# Batch de 10 imágenes de meningioma:
+python3 segment_brain_mri.py dataset/Testing/meningioma/ --batch --max-images 10 --no-show
+
+# Todo el testing (906 imágenes con tumor):
+python3 segment_brain_mri.py dataset/Testing/ --batch --no-show
+```
+
+### Salidas generadas (`resultados_mri/`)
+
+```
+resultados_mri/
+├── resumen_batch.csv                     # Resumen con conteo de tumores por imagen/método
+├── glioma/
+│   └── Te-gl_0010/
+│       ├── kmeans/
+│       │   ├── edges.png                 # Bordes (Canny)
+│       │   ├── mask_binary.png           # Máscara binaria final
+│       │   ├── characterization.png      # BBox + centroide + ID
+│       │   ├── cluster_visual.png        # Clusters K-Means coloreados
+│       │   ├── features.csv              # Features geométricas
+│       │   ├── morfologia/               # Pasos intermedios
+│       │   └── crops/                    # Recorte por tumor
+│       ├── superpixel/
+│       │   ├── superpixel_boundaries.png # Fronteras SLIC
+│       │   ├── mask_binary.png
+│       │   ├── characterization.png
+│       │   ├── features.csv
+│       │   ├── morfologia/
+│       │   └── crops/
+│       └── region/
+│           ├── mask_binary.png
+│           ├── characterization.png
+│           ├── features.csv
+│           ├── morfologia/
+│           └── crops/
+├── meningioma/
+│   └── ...
+└── pituitary/
+    └── ...
+```
+
+---
+
 ## Estructura del proyecto
 
 | Ruta                         | Contenido                                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------ |
 | `README.md`                  | Este archivo: resumen, figuras y estructura                                                      |
-| `segment_pet.py`             | Pipeline: preprocesamiento, bordes, segmentación, morfología, filtro por forma, features, recortes |
-| `requirements.txt`           | Dependencias (numpy, opencv-python, matplotlib)                                                  |
-| `imagenes/`                  | Carpeta de entrada; por defecto `pet_cuerpo_completo.png`                                        |
-| `resultados/`                | PNG, CSV, recortes y pasos morfológicos generados al ejecutar                                    |
-| `resultados/<m>/morfologia/` | Imágenes intermedias: erosión, dilatación, cierre, filtro área, filtro forma                     |
+| `segment_pet.py`             | Pipeline PET: preprocesamiento, bordes, segmentación, morfología, filtro por forma, features, recortes |
+| `segment_brain_mri.py`       | Pipeline MRI cerebral: CLAHE, SuperPixel SLIC, K-Means, Region Growing, detección de tumores     |
+| `requirements.txt`           | Dependencias (numpy, opencv-python, matplotlib, scikit-image)                                    |
+| `dataset/`                   | Brain Tumor MRI Dataset (descargar desde Zenodo, ver instrucciones arriba)                       |
+| `imagenes/`                  | Carpeta de entrada PET; por defecto `pet_cuerpo_completo.png`                                    |
+| `resultados/`                | Salidas del pipeline PET (PNG, CSV, recortes, pasos morfológicos)                                |
+| `resultados_mri/`            | Salidas del pipeline MRI (por categoría/imagen/método)                                           |
 | `docs/Readme.md`             | Instalación, entorno virtual y salidas                                                           |
 | `docs/doc.md`                | Informe / respuestas a la consigna                                                               |
-| `.gitignore`                 | Excluye venv/, cachés de Python e ignorados de IDE                                               |
+| `.gitignore`                 | Excluye venv/, cachés, dataset/ y resultados_mri/                                                |
 
-Parámetros útiles en código: `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL`, `ERODE_ITERATIONS`, `DILATE_KERNEL`, `DILATE_ITERATIONS`, `ORGAN_MIN_AREA`, `ORGAN_MIN_COMPACTNESS`, `ORGAN_MIN_SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW`/`CANNY_HIGH`, `CROP_PAD` en `segment_pet.py`.
+### Parámetros ajustables
+
+**PET** (`segment_pet.py`): `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL/ITERATIONS`, `DILATE_KERNEL/ITERATIONS`, `ORGAN_MIN_AREA/COMPACTNESS/SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW/HIGH`, `CROP_PAD`.
+
+**MRI** (`segment_brain_mri.py`): `SLIC_N_SEGMENTS`, `SLIC_COMPACTNESS`, `SLIC_SIGMA`, `KMEANS_K`, `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `MIN_LESION_AREA`, `ERODE_KERNEL/ITERATIONS`, `DILATE_KERNEL/ITERATIONS`, `ORGAN_MIN_AREA/COMPACTNESS/SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW/HIGH`, `TARGET_SIZE`.
 
 ---
 
