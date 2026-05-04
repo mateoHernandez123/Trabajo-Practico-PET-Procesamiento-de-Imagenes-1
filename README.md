@@ -256,9 +256,284 @@ Imagen MRI → CLAHE + Gaussiano → Máscara cerebral (Otsu) → Canny (bordes)
 | **SuperPixel (SLIC) + Clustering** | SLIC genera ~200 superpíxeles → features por SP (intensidad, std, gradiente Sobel, posición) → K-Means ponderado (6 clusters) | Detecta regiones tumorales con intensidad > media cerebral + 0.8·σ, respetando bordes naturales |
 | **Region Growing** | Semillas desde percentil 85% de intensidad dentro del cerebro → BFS 8-vecinos con tolerancia 20 | Crecimiento adaptativo desde las zonas más brillantes |
 
-### Resultados de ejecución
+---
 
-Procesamiento de 35 imágenes (15 glioma, 10 meningioma, 10 pituitary):
+### Resultados visuales — Glioma (Te-gl_0010)
+
+#### Imagen MRI original
+
+<p align="center">
+  <img src="resultados_mri_samples/originales/Te-gl_0010.jpg" alt="MRI original — Glioma Te-gl_0010" width="200">
+</p>
+
+**Qué es:** imagen MRI cerebral con glioma (tumor difuso de alto grado).
+
+#### Bordes detectados (Canny)
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/edges.png" alt="Bordes Canny — Glioma" width="200">
+</p>
+
+**Qué es:** bordes detectados con Canny (30/100) sobre la imagen mejorada con CLAHE, restringidos a la máscara cerebral.
+
+#### Caracterización — K-Means (6 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/characterization.png" alt="K-Means caracterización — Glioma — 6 tumores" width="250">
+</p>
+
+**Qué es:** imagen con bounding boxes (verde), centroides (magenta) e IDs (azul) de los **6 tumores** detectados por K-Means (K=4, cluster más brillante). Área total tumoral: **9,167 px**.
+
+#### Máscara binaria — K-Means
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/mask_binary.png" alt="Máscara K-Means — Glioma" width="200">
+</p>
+
+#### Clusters K-Means
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/cluster_visual.png" alt="Clusters K-Means — Glioma" width="200">
+</p>
+
+**Qué es:** visualización de los 4 clusters de intensidad. El cluster más brillante (rojo) corresponde a las regiones tumorales.
+
+#### Caracterización — SuperPixel SLIC + Clustering (5 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/superpixel/characterization.png" alt="SuperPixel caracterización — Glioma — 5 tumores" width="250">
+</p>
+
+**Qué es:** **5 tumores** detectados agrupando ~200 superpíxeles SLIC por features (intensidad, gradiente, posición) con K-Means ponderado. Área total tumoral: **5,542 px**.
+
+#### SuperPixel SLIC — Fronteras
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/superpixel/superpixel_boundaries.png" alt="SuperPixel SLIC fronteras — Glioma" width="200">
+</p>
+
+**Qué es:** los ~200 superpíxeles generados por SLIC. Cada celda agrupa píxeles con intensidad y posición similares, respetando los bordes naturales del cerebro y el tumor.
+
+#### Máscara binaria — SuperPixel
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/superpixel/mask_binary.png" alt="Máscara SuperPixel — Glioma" width="200">
+</p>
+
+#### Caracterización — Region Growing (3 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/region/characterization.png" alt="Region Growing caracterización — Glioma — 3 tumores" width="250">
+</p>
+
+**Qué es:** **3 tumores** detectados por crecimiento de regiones desde semillas en el percentil 85% de intensidad. Área total tumoral: **3,225 px**.
+
+#### Máscara binaria — Region Growing
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/region/mask_binary.png" alt="Máscara Region Growing — Glioma" width="200">
+</p>
+
+#### Pipeline morfológico — K-Means (Glioma)
+
+<p align="center">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/morfologia/raw.png" alt="Glioma K-Means — raw" width="130">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/morfologia/eroded.png" alt="Glioma K-Means — erosión" width="130">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/morfologia/dilated.png" alt="Glioma K-Means — dilatación" width="130">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/morfologia/closed.png" alt="Glioma K-Means — cierre" width="130">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/morfologia/area_filtered.png" alt="Glioma K-Means — filtro área" width="130">
+  <img src="resultados_mri_samples/glioma/Te-gl_0010/kmeans/morfologia/shape_filtered.png" alt="Glioma K-Means — filtro forma" width="130">
+</p>
+
+De izquierda a derecha: máscara cruda → erosión → dilatación → cierre → filtro por área → **filtro por forma** (descarta regiones no tumorales).
+
+---
+
+### Resultados visuales — Meningioma (Te-me_0010)
+
+#### Imagen MRI original
+
+<p align="center">
+  <img src="resultados_mri_samples/originales/Te-me_0010.jpg" alt="MRI original — Meningioma Te-me_0010" width="200">
+</p>
+
+**Qué es:** imagen MRI cerebral con meningioma (tumor de las meninges, generalmente bien delimitado).
+
+#### Caracterización — K-Means (4 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/kmeans/characterization.png" alt="K-Means caracterización — Meningioma — 4 tumores" width="250">
+</p>
+
+**Qué es:** **4 tumores** detectados por K-Means. Área total tumoral: **10,573 px**. El meningioma se caracteriza por una región grande y bien definida (tumor #1, 10,240 px).
+
+#### Máscara binaria — K-Means
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/kmeans/mask_binary.png" alt="Máscara K-Means — Meningioma" width="200">
+</p>
+
+#### Clusters K-Means
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/kmeans/cluster_visual.png" alt="Clusters K-Means — Meningioma" width="200">
+</p>
+
+#### Caracterización — SuperPixel SLIC + Clustering (3 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/characterization.png" alt="SuperPixel caracterización — Meningioma — 3 tumores" width="250">
+</p>
+
+**Qué es:** **3 tumores** detectados por SuperPixel + Clustering. Área total: **6,207 px**. El método agrupa superpíxeles de alta intensidad respetando los bordes del tumor.
+
+#### SuperPixel SLIC — Fronteras
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/superpixel_boundaries.png" alt="SuperPixel SLIC fronteras — Meningioma" width="200">
+</p>
+
+#### Máscara binaria — SuperPixel
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/mask_binary.png" alt="Máscara SuperPixel — Meningioma" width="200">
+</p>
+
+#### Caracterización — Region Growing (0 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/region/characterization.png" alt="Region Growing caracterización — Meningioma — 0 tumores" width="250">
+</p>
+
+**Qué es:** Region Growing creció una región enorme (28,578 px) que fue descartada por el filtro por forma (compacidad=0.781, solidez=0.974). En este caso, el filtro fue demasiado agresivo porque el meningioma es grande, compacto y sólido — similar al perfil de un órgano sano.
+
+#### Pipeline morfológico — SuperPixel (Meningioma)
+
+<p align="center">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/morfologia/raw.png" alt="Meningioma SP — raw" width="130">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/morfologia/eroded.png" alt="Meningioma SP — erosión" width="130">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/morfologia/dilated.png" alt="Meningioma SP — dilatación" width="130">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/morfologia/closed.png" alt="Meningioma SP — cierre" width="130">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/morfologia/area_filtered.png" alt="Meningioma SP — filtro área" width="130">
+  <img src="resultados_mri_samples/meningioma/Te-me_0010/superpixel/morfologia/shape_filtered.png" alt="Meningioma SP — filtro forma" width="130">
+</p>
+
+De izquierda a derecha: máscara cruda → erosión → dilatación → cierre → filtro por área → **filtro por forma**.
+
+---
+
+### Resultados visuales — Pituitary (Te-pi_0010)
+
+#### Imagen MRI original
+
+<p align="center">
+  <img src="resultados_mri_samples/originales/Te-pi_0010.jpg" alt="MRI original — Pituitary Te-pi_0010" width="200">
+</p>
+
+**Qué es:** imagen MRI cerebral con tumor pituitario (adenoma hipofisario, zona central inferior del cerebro).
+
+#### Caracterización — K-Means (2 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/characterization.png" alt="K-Means caracterización — Pituitary — 2 tumores" width="250">
+</p>
+
+**Qué es:** **2 tumores** detectados por K-Means. Área total tumoral: **13,469 px**. K-Means agrupa el tumor pituitario como una sola región grande.
+
+#### Máscara binaria — K-Means
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/mask_binary.png" alt="Máscara K-Means — Pituitary" width="200">
+</p>
+
+#### Caracterización — SuperPixel SLIC + Clustering (9 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/superpixel/characterization.png" alt="SuperPixel caracterización — Pituitary — 9 tumores" width="250">
+</p>
+
+**Qué es:** **9 tumores** detectados por SuperPixel + Clustering. Área total: **7,445 px**. El método segmenta la región tumoral en múltiples subregiones siguiendo las variaciones de intensidad dentro del tumor.
+
+#### SuperPixel SLIC — Fronteras
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/superpixel/superpixel_boundaries.png" alt="SuperPixel SLIC fronteras — Pituitary" width="200">
+</p>
+
+#### Máscara binaria — SuperPixel
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/superpixel/mask_binary.png" alt="Máscara SuperPixel — Pituitary" width="200">
+</p>
+
+#### Caracterización — Region Growing (3 tumores detectados)
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/region/characterization.png" alt="Region Growing caracterización — Pituitary — 3 tumores" width="250">
+</p>
+
+**Qué es:** **3 tumores** detectados por Region Growing. Área total: **14,494 px**. El crecimiento de regiones captura el tumor pituitario central y regiones laterales de alta intensidad.
+
+#### Máscara binaria — Region Growing
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/region/mask_binary.png" alt="Máscara Region Growing — Pituitary" width="200">
+</p>
+
+#### Pipeline morfológico — K-Means (Pituitary)
+
+<p align="center">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/morfologia/raw.png" alt="Pituitary KM — raw" width="130">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/morfologia/eroded.png" alt="Pituitary KM — erosión" width="130">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/morfologia/dilated.png" alt="Pituitary KM — dilatación" width="130">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/morfologia/closed.png" alt="Pituitary KM — cierre" width="130">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/morfologia/area_filtered.png" alt="Pituitary KM — filtro área" width="130">
+  <img src="resultados_mri_samples/pituitary/Te-pi_0010/kmeans/morfologia/shape_filtered.png" alt="Pituitary KM — filtro forma" width="130">
+</p>
+
+De izquierda a derecha: máscara cruda → erosión → dilatación → cierre → filtro por área → **filtro por forma**.
+
+---
+
+### Features detectadas — MRI Cerebral
+
+#### Glioma (Te-gl_0010) — K-Means (6 tumores)
+
+| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Excent. | Compact. | I. media |
+|----|------|-----------|-------------------|--------------------|----------|---------|----------|----------|
+| 1 | 7682 | 1246.9 | (137.7, 130.2) | (44, 29, 176, 201) | 188.5 / 162.4 | 0.508 | 0.062 | 84.4 |
+| 2 | 105 | 38.4 | (76.9, 102.4) | (71, 97, 13, 12) | 13.3 / 8.7 | 0.757 | 0.896 | 77.5 |
+| 3 | 958 | 142.0 | (134.6, 116.4) | (113, 99, 42, 33) | 43.5 / 31.3 | 0.694 | 0.597 | 91.8 |
+| 4 | 146 | 45.2 | (166.1, 132.7) | (159, 126, 15, 14) | 14.0 / 11.9 | 0.532 | 0.897 | 68.7 |
+| 5 | 134 | 43.0 | (167.3, 153.7) | (162, 147, 12, 15) | 13.3 / 11.5 | 0.501 | 0.912 | 69.7 |
+| 6 | 142 | 44.6 | (190.4, 160.8) | (184, 154, 14, 15) | 14.1 / 11.4 | 0.590 | 0.896 | 59.4 |
+
+#### Meningioma (Te-me_0010) — K-Means (4 tumores)
+
+| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Excent. | Compact. | I. media |
+|----|------|-----------|-------------------|--------------------|----------|---------|----------|----------|
+| 1 | 10240 | 756.0 | (124.5, 147.4) | (27, 9, 206, 242) | 244.6 / 207.9 | 0.527 | 0.225 | 137.6 |
+| 2 | 183 | 54.3 | (135.0, 114.7) | (127, 107, 17, 17) | 17.5 / 12.8 | 0.683 | 0.780 | 137.0 |
+| 3 | 93 | 35.6 | (134.8, 143.9) | (129, 139, 12, 11) | 11.5 / 8.9 | 0.630 | 0.924 | 140.3 |
+| 4 | 57 | 27.3 | (111.0, 144.0) | (107, 140, 9, 9) | 8.5 / 7.0 | 0.558 | 0.960 | 135.6 |
+
+#### Pituitary (Te-pi_0010) — SuperPixel (9 tumores)
+
+| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Excent. | Compact. | I. media |
+|----|------|-----------|-------------------|--------------------|----------|---------|----------|----------|
+| 1 | 1361 | 160.6 | (97.6, 68.1) | (72, 44, 45, 50) | 47.3 / 42.6 | 0.436 | 0.663 | 114.5 |
+| 2 | 866 | 114.1 | (152.9, 66.8) | (136, 52, 37, 31) | 37.0 / 29.6 | 0.600 | 0.836 | 118.7 |
+| 3 | 708 | 104.3 | (205.8, 97.8) | (191, 83, 28, 31) | 30.9 / 28.9 | 0.353 | 0.818 | 114.9 |
+| 4 | 641 | 95.7 | (48.8, 97.7) | (35, 85, 28, 27) | 29.3 / 26.7 | 0.410 | 0.880 | 118.1 |
+| 5 | 456 | 83.5 | (44.9, 134.3) | (35, 122, 21, 26) | 26.4 / 21.4 | 0.582 | 0.823 | 116.4 |
+| 6 | 594 | 97.4 | (52.2, 172.7) | (43, 154, 21, 37) | 36.4 / 20.7 | 0.823 | 0.788 | 130.7 |
+| 7 | 1914 | 248.8 | (184.1, 199.9) | (141, 155, 74, 82) | 102.1 / 30.9 | 0.953 | 0.388 | 117.1 |
+| 8 | 407 | 78.8 | (123.5, 201.3) | (109, 191, 29, 20) | 28.0 / 17.7 | 0.775 | 0.824 | 99.3 |
+| 9 | 498 | 99.6 | (108.2, 228.8) | (90, 218, 39, 21) | 43.2 / 14.3 | 0.943 | 0.631 | 124.1 |
+
+---
+
+### Resumen de detección (35 imágenes procesadas)
 
 #### Detección por categoría
 
@@ -282,15 +557,6 @@ Procesamiento de 35 imágenes (15 glioma, 10 meningioma, 10 pituitary):
 | SuperPixel (SLIC) | 149 | 34/35 (97%) |
 | Region Growing | 102 | 30/35 (86%) |
 
-#### Ejemplo: imágenes de glioma (Te-gl_0010 a Te-gl_0013)
-
-| Imagen | K-Means | SuperPixel | Region Growing |
-|--------|---------|------------|----------------|
-| Te-gl_0010.jpg | 6 tumores | 5 tumores | 3 tumores |
-| Te-gl_0011.jpg | 1 tumor | 4 tumores | 7 tumores |
-| Te-gl_0012.jpg | 5 tumores | 7 tumores | 1 tumor |
-| Te-gl_0013.jpg | 3 tumores | 4 tumores | 1 tumor |
-
 ### Uso
 
 ```bash
@@ -307,40 +573,6 @@ python3 segment_brain_mri.py dataset/Testing/meningioma/ --batch --max-images 10
 python3 segment_brain_mri.py dataset/Testing/ --batch --no-show
 ```
 
-### Salidas generadas (`resultados_mri/`)
-
-```
-resultados_mri/
-├── resumen_batch.csv                     # Resumen con conteo de tumores por imagen/método
-├── glioma/
-│   └── Te-gl_0010/
-│       ├── kmeans/
-│       │   ├── edges.png                 # Bordes (Canny)
-│       │   ├── mask_binary.png           # Máscara binaria final
-│       │   ├── characterization.png      # BBox + centroide + ID
-│       │   ├── cluster_visual.png        # Clusters K-Means coloreados
-│       │   ├── features.csv              # Features geométricas
-│       │   ├── morfologia/               # Pasos intermedios
-│       │   └── crops/                    # Recorte por tumor
-│       ├── superpixel/
-│       │   ├── superpixel_boundaries.png # Fronteras SLIC
-│       │   ├── mask_binary.png
-│       │   ├── characterization.png
-│       │   ├── features.csv
-│       │   ├── morfologia/
-│       │   └── crops/
-│       └── region/
-│           ├── mask_binary.png
-│           ├── characterization.png
-│           ├── features.csv
-│           ├── morfologia/
-│           └── crops/
-├── meningioma/
-│   └── ...
-└── pituitary/
-    └── ...
-```
-
 ---
 
 ## Estructura del proyecto
@@ -354,7 +586,8 @@ resultados_mri/
 | `dataset/`                   | Brain Tumor MRI Dataset (descargar desde Zenodo, ver instrucciones arriba)                       |
 | `imagenes/`                  | Carpeta de entrada PET; por defecto `pet_cuerpo_completo.png`                                    |
 | `resultados/`                | Salidas del pipeline PET (PNG, CSV, recortes, pasos morfológicos)                                |
-| `resultados_mri/`            | Salidas del pipeline MRI (por categoría/imagen/método)                                           |
+| `resultados_mri/`            | Salidas del pipeline MRI (generadas al ejecutar, gitignored)                                     |
+| `resultados_mri_samples/`    | Ejemplos de resultados MRI commiteados (glioma, meningioma, pituitary) para visualizar en GitHub |
 | `docs/Readme.md`             | Instalación, entorno virtual y salidas                                                           |
 | `docs/doc.md`                | Informe / respuestas a la consigna                                                               |
 | `.gitignore`                 | Excluye venv/, cachés, dataset/ y resultados_mri/                                                |

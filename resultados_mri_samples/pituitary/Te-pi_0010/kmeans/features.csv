@@ -1,0 +1,3 @@
+id,area_px,perimeter_px,centroid_x,centroid_y,bbox_x,bbox_y,bbox_w,bbox_h,axis_major_px,axis_minor_px,orientation_deg,eccentricity,compactness,mean_intensity
+1,12972,780.58,126.4,118.6,35,28,186,210,208.08,190.45,174.41,0.403,0.268,114.6
+2,497,88.77,125.7,199.0,110,186,29,25,30.15,21.23,66.43,0.710,0.793,100.1
