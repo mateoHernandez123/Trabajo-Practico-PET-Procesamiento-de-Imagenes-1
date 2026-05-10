@@ -193,13 +193,13 @@ python3 segment_brain_mri.py dataset/Testing/ --batch --no-show
 
 ### Argumentos del CLI — MRI cerebral
 
-| Argumento       | Tipo                                         | Default | Descripción                             |
-| --------------- | -------------------------------------------- | ------- | --------------------------------------- |
-| `path`          | posicional                                   | —       | Ruta a imagen o directorio              |
-| `--method`      | `kmeans` \| `superpixel` \| `region` \| `all`| `all`   | Método de segmentación                  |
-| `--batch`       | flag                                         | off     | Procesar todas las imágenes del dir     |
-| `--max-images`  | entero                                       | 0       | Límite en modo batch (0 = sin límite)   |
-| `--no-show`     | flag                                         | off     | No abre ventanas de matplotlib          |
+| Argumento      | Tipo                                          | Default | Descripción                           |
+| -------------- | --------------------------------------------- | ------- | ------------------------------------- |
+| `path`         | posicional                                    | —       | Ruta a imagen o directorio            |
+| `--method`     | `kmeans` \| `superpixel` \| `region` \| `all` | `all`   | Método de segmentación                |
+| `--batch`      | flag                                          | off     | Procesar todas las imágenes del dir   |
+| `--max-images` | entero                                        | 0       | Límite en modo batch (0 = sin límite) |
+| `--no-show`    | flag                                          | off     | No abre ventanas de matplotlib        |
 
 ### Salidas generadas — MRI cerebral
 
@@ -215,6 +215,93 @@ Se guardan en `resultados_mri/<categoría>/<imagen>/<método>/`:
 - `superpixel_boundaries.png` (SuperPixel) — fronteras SLIC
 
 En modo batch se genera además `resultados_mri/resumen_batch.csv` con el conteo de tumores por imagen y método.
+
+---
+
+## Ejecutar el análisis longitudinal
+
+```bash
+# Demo con datos sintéticos (funciona sin imágenes externas):
+python3 longitudinal_pet_analysis.py --generate-demo
+
+# Demo sin ventanas (modo batch):
+python3 longitudinal_pet_analysis.py --generate-demo --no-show
+
+# Analizar imágenes de un paciente (directorio con PET):
+python3 longitudinal_pet_analysis.py carpeta_paciente/
+
+# Analizar imágenes individuales:
+python3 longitudinal_pet_analysis.py img_t0.png img_t1.png img_t2.png
+
+# Con nnU-Net (requiere instalación previa de nnU-Net v1):
+python3 longitudinal_pet_analysis.py carpeta_nifti/ --method nnunet
+```
+
+### Argumentos del CLI — Análisis longitudinal
+
+| Argumento         | Tipo                    | Default     | Descripción                                   |
+| ----------------- | ----------------------- | ----------- | --------------------------------------------- |
+| `paths`           | posicional (0 o más)    | —           | Ruta a directorio de paciente o imágenes      |
+| `--generate-demo` | flag                    | off         | Genera datos sintéticos y ejecuta el pipeline |
+| `--method`        | `classical` \| `nnunet` | `classical` | Método de segmentación                        |
+| `--patient-id`    | texto                   | auto        | Identificador del paciente                    |
+| `--no-show`       | flag                    | off         | No abre ventanas de matplotlib                |
+
+### Salidas generadas — Análisis longitudinal
+
+Se guardan en `resultados_longitudinal/<paciente>/`:
+
+- `comparacion_temporal.png` — Grilla con imagen + overlay de segmentación por timepoint
+- `timeline_volumen.png` — Gráfico de evolución del área tumoral en el tiempo
+- `heatmaps_cambio_resumen.png` — Mapa de cambios (rojo=crecimiento, verde=reducción, amarillo=estable)
+- `dashboard_metricas.png` — Dashboard con área, cambio porcentual, Dice, tabla RECIST
+- `metricas_longitudinales.csv` — CSV con todas las métricas por timepoint
+- `reporte.txt` — Reporte de texto con evaluación clínica y resumen
+- `timepoints/` — Imagen, máscara y overlay por cada timepoint
+- `heatmaps_cambio/` — Heatmap de cambio entre cada par de timepoints consecutivos
+
+### Formato de datos de entrada
+
+Para analizar sus propias imágenes, crear un directorio con esta estructura:
+
+```
+paciente_001/
+├── estudio_2025-01.png       # Timepoint 1 (la fecha se extrae del nombre)
+├── estudio_2025-04.png       # Timepoint 2
+├── estudio_2025-07.png       # Timepoint 3
+└── estudio_2025-10.png       # Timepoint 4
+```
+
+Si se tienen máscaras pre-computadas, nombrarlas con el sufijo `_mask`:
+
+```
+paciente_001/
+├── estudio_2025-01.png
+├── estudio_2025-01_mask.png  # Máscara del timepoint 1
+├── estudio_2025-04.png
+├── estudio_2025-04_mask.png
+└── ...
+```
+
+### Instalación de nnU-Net (opcional)
+
+Para usar el modelo pre-entrenado JuST_BrainPET para segmentación de tumores en PET:
+
+```bash
+# 1. Instalar PyTorch (con CUDA si hay GPU)
+pip install torch
+
+# 2. Instalar nnU-Net v1
+pip install git+https://github.com/MIC-DKFZ/nnUNet.git@nnunetv1
+
+# 3. Configurar variables de entorno
+export nnUNet_raw_data_base=/path/to/nnUNet_raw
+export nnUNet_preprocessed=/path/to/nnUNet_preprocessed
+export RESULTS_FOLDER=/path/to/nnUNet_results
+
+# 4. Descargar modelo pre-entrenado
+nnUNet_download_pretrained_model Task169_BrainTumorPET
+```
 
 ---
 

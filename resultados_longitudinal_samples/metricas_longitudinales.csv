@@ -1,0 +1,5 @@
+timepoint,date,area_px,area_change_abs,area_change_pct,area_change_vs_baseline_pct,dice_vs_prev,jaccard_vs_prev,centroid_x,centroid_y,centroid_disp,new_area_px,disappeared_area_px,mean_intensity,recist
+T0_baseline,2025-01-15,1162,0,0.0,0.0,,,169.9879518072289,119.99913941480206,,0,0,215.28399311531842,Baseline
+T1_crecimiento,2025-04-15,1620,458,39.4,39.4,0.835,0.717,169.97345679012346,120.0141975308642,0.0,458,0,224.4672839506173,PD (Enfermedad Progresiva)
+T2_tratamiento,2025-07-14,1162,-458,-28.3,0.0,0.835,0.717,169.9879518072289,119.99913941480206,0.0,0,458,210.4922547332186,SD (Enfermedad Estable)
+T3_respuesta,2025-10-12,459,-703,-60.5,-60.5,0.566,0.395,170.09368191721134,120.06100217864923,0.1,0,703,192.94771241830065,PR (Respuesta Parcial)

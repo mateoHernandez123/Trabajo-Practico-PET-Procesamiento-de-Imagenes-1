@@ -139,13 +139,14 @@ Usar erosión y dilatación como operaciones independientes permite **controlar 
 
 El cerebro, hígado y riñones presentan captación fisiológica normal en PET que NO es patológica. Para distinguirlos de tumores sin depender de la posición (el tumor puede estar en cualquier parte del cuerpo), se analizan **métricas de forma** de cada componente:
 
-| Métrica | Fórmula | Órganos | Tumores |
-|---------|---------|---------|---------|
-| **Compacidad** | \( 4\pi A / P^2 \) | Alta (> 0.40): forma redondeada | Variable: bordes irregulares |
-| **Solidez** | \( A / A_{convex\_hull} \) | Alta (> 0.65): contorno suave | Variable: más concavidades |
-| **Área** | Conteo de píxeles | Grande (> 350 px) | Menor |
+| Métrica        | Fórmula                    | Órganos                         | Tumores                      |
+| -------------- | -------------------------- | ------------------------------- | ---------------------------- |
+| **Compacidad** | \( 4\pi A / P^2 \)         | Alta (> 0.40): forma redondeada | Variable: bordes irregulares |
+| **Solidez**    | \( A / A\_{convex_hull} \) | Alta (> 0.65): contorno suave   | Variable: más concavidades   |
+| **Área**       | Conteo de píxeles          | Grande (> 350 px)               | Menor                        |
 
 Un componente se clasifica como **órgano** (y se descarta) si cumple **todas** estas condiciones:
+
 - Área > 350 px
 - Compacidad > 0.40
 - Solidez > 0.65
@@ -162,14 +163,14 @@ Componentes con área ≤ 350 px se conservan sin análisis de forma (son demasi
 
 Cada paso se guarda como imagen individual en `resultados/<método>/morfologia/`:
 
-| Archivo | Contenido |
-|---------|-----------|
-| `raw.png` | Máscara directa de la segmentación (antes de cualquier morfología) |
-| `eroded.png` | Después de la erosión (regiones separadas, cerebro chico eliminado) |
-| `dilated.png` | Después de la dilatación (bordes recuperados, expansión neta) |
-| `closed.png` | Después del cierre (huecos internos sellados) |
-| `area_filtered.png` | Después del filtro por área (componentes < 15 px descartados) |
-| `shape_filtered.png` | Máscara final (órganos descartados por forma) |
+| Archivo              | Contenido                                                           |
+| -------------------- | ------------------------------------------------------------------- |
+| `raw.png`            | Máscara directa de la segmentación (antes de cualquier morfología)  |
+| `eroded.png`         | Después de la erosión (regiones separadas, cerebro chico eliminado) |
+| `dilated.png`        | Después de la dilatación (bordes recuperados, expansión neta)       |
+| `closed.png`         | Después del cierre (huecos internos sellados)                       |
+| `area_filtered.png`  | Después del filtro por área (componentes < 15 px descartados)       |
+| `shape_filtered.png` | Máscara final (órganos descartados por forma)                       |
 
 ### Resultado
 
@@ -236,3 +237,219 @@ El flag `--filter-anatomy` descarta componentes por ubicación y tamaño:
 - **Centroide debajo del 93%:** vejiga (acumula trazador)
 
 > **Limitación:** es una heurística basada en posición relativa. Un enfoque riguroso requeriría atlas anatómico o delimitación manual de ROIs.
+
+---
+
+---
+
+# Análisis longitudinal de tumores PET (`longitudinal_pet_analysis.py`)
+
+## Objetivo
+
+> Evaluar la **evolución temporal** de tumores cerebrales comparando estudios PET del mismo paciente en distintos momentos, determinando si un tumor está creciendo, respondiendo al tratamiento o se mantiene estable.
+
+El análisis longitudinal extiende el pipeline de segmentación del TP1: en lugar de analizar **una sola imagen**, se comparan **múltiples estudios** del mismo paciente a lo largo del tiempo. Esto permite pasar de la detección puntual a un **seguimiento clínico** con métricas cuantitativas.
+
+---
+
+## 7. Registro espacial (alineación entre timepoints)
+
+### ¿Qué se hizo?
+
+Antes de comparar dos estudios PET del mismo paciente, las imágenes deben estar **alineadas espacialmente**. Aunque se trate del mismo paciente, la posición de la cabeza dentro del scanner varía entre sesiones: puede haber traslación, rotación leve o diferencias de escala.
+
+Se implementa un **registro rígido 2D** basado en **correlación de fase** (`cv2.phaseCorrelate`): se estima el desplazamiento traslacional entre la imagen baseline (T0) y cada follow-up, y se aplica una transformación afín para alinearlas.
+
+```python
+(dx, dy), response = cv2.phaseCorrelate(fixed_f, moving_f)
+M = np.float32([[1, 0, dx], [0, 1, dy]])
+registered = cv2.warpAffine(moving, M, (cols, rows))
+```
+
+Las máscaras de segmentación se re-muestrean con **interpolación nearest-neighbor** para no crear valores intermedios en la máscara binaria.
+
+### ¿Por qué correlación de fase?
+
+- Opera en el dominio de frecuencia: es robusta a cambios de intensidad entre sesiones (distinto scanner, distinta calibración).
+- Estima traslación subpíxel con alta precisión.
+- Para imágenes PET 2D con cambios pequeños entre sesiones, un modelo traslacional es suficiente.
+- Para datos 3D clínicos reales, se recomienda SimpleITK con transformaciones rígidas/deformables, pero el principio es el mismo.
+
+### Salida
+
+Cada timepoint posterior al baseline se transforma al espacio del T0. Las imágenes y máscaras registradas se usan en todos los cálculos posteriores.
+
+---
+
+## 8. Segmentación tumoral — métodos disponibles
+
+### ¿Qué se hizo?
+
+Se ofrecen dos backends de segmentación intercambiables:
+
+### Método clásico (`--method classical`)
+
+K-Means sobre intensidades de píxel dentro de la máscara cerebral, seleccionando el cluster más brillante (tumor en PET cerebral), seguido de morfología (erosión + dilatación + cierre + filtro por área):
+
+1. **Gaussiano (5×5, σ=1.0):** suavizado.
+2. **Máscara cerebral:** Otsu + morfología + componente conexa más grande.
+3. **K-Means (K=4):** cluster más brillante = tumor.
+4. **Erosión** (kernel 3×3, 1 iter) + **Dilatación** (kernel 5×5, 2 iter) + **Cierre** (kernel 5×5, 2 iter).
+5. **Filtro por área** (≥ 30 px).
+
+### Método nnU-Net (`--method nnunet`)
+
+Utiliza el modelo pre-entrenado **JuST_BrainPET** (Task169_BrainTumorPET) del framework [nnU-Net v1](https://github.com/MIC-DKFZ/nnUNet/tree/nnunetv1). Es una red neuronal 3D U-Net que fue entrenada específicamente para segmentar tumores en PET cerebrales con trazador 18F-FET.
+
+- **Arquitectura:** nnU-Net 3d_fullres auto-configurado.
+- **Patch size:** 64×192×192 mm.
+- **Performance reportada:** F1=92%, Sensibilidad=93%, PPV=95%.
+- **Entrada:** volúmenes NIfTI (.nii.gz) de PET estático FET.
+- **Paper:** Lohmann et al., _Automated Brain Tumor Detection and Segmentation for Treatment Response Assessment Using Amino Acid PET_, J Nucl Med, 2023.
+
+### ¿Por qué dos métodos?
+
+El método clásico funciona con imágenes 2D (PNG/JPG) sin dependencias pesadas. El método nnU-Net requiere PyTorch + GPU + datos en NIfTI 3D, pero ofrece segmentación state-of-the-art. El pipeline longitudinal es agnóstico al backend: acepta máscaras de cualquier origen.
+
+---
+
+## 9. Métricas longitudinales
+
+### ¿Qué se calculó?
+
+Para cada par de timepoints consecutivos se calculan métricas que cuantifican la evolución tumoral:
+
+| Métrica                      | Fórmula                                       | Interpretación clínica                                                |
+| ---------------------------- | --------------------------------------------- | --------------------------------------------------------------------- |
+| **Área tumoral**             | Suma de píxeles del tumor                     | Tamaño de la lesión en cada momento                                   |
+| **Cambio absoluto**          | Área(t) - Área(t-1)                           | Cuánto creció o se redujo en píxeles                                  |
+| **Cambio porcentual**        | (Área(t) - Área(t-1)) / Área(t-1) × 100       | Velocidad relativa de cambio                                          |
+| **Cambio vs baseline**       | (Área(t) - Área(T0)) / Área(T0) × 100         | Evolución acumulada desde el diagnóstico                              |
+| **Dice Similarity**          | 2\|A∩B\| / (\|A\|+\|B\|)                      | Similitud espacial entre máscaras; 1.0 = idénticas, 0.0 = sin overlap |
+| **Jaccard (IoU)**            | \|A∩B\| / \|A∪B\|                             | Overlap real; más estricto que Dice                                   |
+| **Desplazamiento centroide** | √((cx₁-cx₂)² + (cy₁-cy₂)²)                    | ¿El tumor se movió? Posible efecto masa o migración                   |
+| **Nuevas regiones**          | Píxeles en máscara(t) pero no en máscara(t-1) | Aparición de nuevas áreas tumorales                                   |
+| **Regiones desaparecidas**   | Píxeles en máscara(t-1) pero no en máscara(t) | Regiones que respondieron al tratamiento                              |
+| **Intensidad media**         | Media de gris en la región tumoral            | Proxy de actividad metabólica (captación PET)                         |
+
+### ¿Por qué estas métricas?
+
+- **Área + cambio porcentual:** son la base de los criterios clínicos de respuesta (RECIST).
+- **Dice + Jaccard:** miden cuánto cambió la _distribución espacial_ del tumor, no solo su tamaño. Un tumor puede mantener el mismo volumen pero moverse o cambiar de forma.
+- **Centroide:** si el tumor se desplaza significativamente, puede indicar efecto masa (desplazamiento de estructuras cerebrales) o aparición de nuevos focos.
+- **Nuevas/desaparecidas:** permiten distinguir entre reducción uniforme y aparición de nuevas lesiones satélite.
+- **Intensidad:** en PET, un tumor que mantiene su tamaño pero reduce su intensidad media puede estar respondiendo al tratamiento (menor actividad metabólica).
+
+---
+
+## 10. Clasificación RECIST
+
+### ¿Qué se hizo?
+
+Se implementa una versión simplificada de los criterios [RECIST](https://recist.eortc.org/) (Response Evaluation Criteria in Solid Tumors), adaptada a mediciones 2D de área tumoral:
+
+| Clasificación                | Criterio (cambio vs baseline) | Interpretación                                      |
+| ---------------------------- | ----------------------------- | --------------------------------------------------- |
+| **CR** (Complete Response)   | Reducción > 90%               | El tumor prácticamente desapareció                  |
+| **PR** (Partial Response)    | Reducción > 30%               | Buena respuesta al tratamiento                      |
+| **SD** (Stable Disease)      | Entre -30% y +20%             | Sin cambio significativo                            |
+| **PD** (Progressive Disease) | Aumento > 20%                 | El tumor está creciendo; el tratamiento no funciona |
+
+### ¿Por qué RECIST?
+
+RECIST es el estándar clínico internacional para evaluar respuesta tumoral en ensayos oncológicos. Aunque la versión clínica real usa medidas unidimensionales sobre CT/MRI, adaptar los umbrales a mediciones de área en PET permite presentar resultados en un formato que los médicos reconocen y comprenden. Los umbrales (-30% y +20%) provienen directamente de las guías RECIST 1.1.
+
+---
+
+## 11. Visualizaciones longitudinales
+
+### ¿Qué se generó?
+
+El pipeline produce 5 tipos de visualizaciones que permiten evaluar la evolución tumoral:
+
+| Visualización             | Archivo                       | Descripción                                                                                                                                               |
+| ------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Comparación temporal**  | `comparacion_temporal.png`    | Grilla 2×N: fila superior = imagen PET con overlay verde de la segmentación, fila inferior = máscara binaria con cambio porcentual y clasificación RECIST |
+| **Timeline de volumen**   | `timeline_volumen.png`        | Gráfico de línea con el área tumoral en cada fecha; marca el pico tumoral con línea punteada roja                                                         |
+| **Heatmap de cambios**    | `heatmaps_cambio_resumen.png` | Mapa de cambios entre timepoints consecutivos: **rojo** = crecimiento, **verde** = reducción, **amarillo/cyan** = estable                                 |
+| **Dashboard**             | `dashboard_metricas.png`      | Panel con 4 gráficos: área por timepoint, cambio % vs baseline con umbrales RECIST, curva de Dice, tabla resumen                                          |
+| **Heatmaps individuales** | `heatmaps_cambio/*.png`       | Un heatmap por cada par de timepoints consecutivos                                                                                                        |
+
+### ¿Por qué estas visualizaciones?
+
+- **Comparación temporal:** permite evaluar visualmente si el overlay de segmentación tiene sentido clínico en cada momento.
+- **Timeline:** la curva de volumen es el indicador más intuitivo de respuesta al tratamiento. Un oncólogo puede ver inmediatamente si hay tendencia a la reducción.
+- **Heatmaps:** muestran **dónde** cambió el tumor, no solo cuánto. Un tumor puede reducirse en un lado y crecer en otro (cambio de forma, no de tamaño).
+- **Dashboard:** condensa todas las métricas en una sola imagen para presentaciones o reportes.
+
+---
+
+## 12. Reporte clínico
+
+### ¿Qué se generó?
+
+Un reporte de texto (`reporte.txt`) con:
+
+- Identificación del paciente y período de análisis.
+- Evolución tumoral por timepoint: fecha, área, cambio porcentual, clasificación RECIST.
+- Resumen: área baseline vs final, cambio total, pico tumoral, evaluación clínica.
+- Conclusión automática: _"El tumor muestra BUENA RESPUESTA al tratamiento"_ / _"muestra PROGRESIÓN"_ / _"se mantiene ESTABLE"_.
+
+Además se genera un CSV (`metricas_longitudinales.csv`) con todas las métricas numéricas para análisis posterior.
+
+### ¿Por qué un reporte textual?
+
+En contexto clínico, el radiólogo o oncólogo necesita un resumen legible, no solo gráficos. El reporte combina datos cuantitativos (áreas, porcentajes, Dice) con interpretación cualitativa (RECIST, conclusión), similar a un informe radiológico real.
+
+---
+
+## Resultados del demo
+
+El modo `--generate-demo` ejecuta el pipeline completo sobre un escenario clínico simulado con 4 timepoints de un cerebro PET sintético:
+
+| Timepoint      | Fecha      | Escenario             | Área     | Cambio vs baseline | RECIST   |
+| -------------- | ---------- | --------------------- | -------- | ------------------ | -------- |
+| T0_baseline    | 2025-01-15 | Tumor detectado       | 1,162 px | —                  | Baseline |
+| T1_crecimiento | 2025-04-15 | Crece sin tratamiento | 1,620 px | +39.4%             | PD       |
+| T2_tratamiento | 2025-07-14 | Inicio tratamiento    | 1,162 px | 0.0%               | SD       |
+| T3_respuesta   | 2025-10-12 | Buena respuesta       | 459 px   | -60.5%             | PR       |
+
+**Evaluación final:** Respuesta Parcial (PR) — reducción del 60.5% respecto al baseline. El tumor muestra buena respuesta al tratamiento.
+
+**Métricas de similitud entre timepoints consecutivos:**
+
+| Transición | Dice  | Jaccard | Nuevas regiones | Desaparecidas |
+| ---------- | ----- | ------- | --------------- | ------------- |
+| T0 → T1    | 0.835 | 0.717   | 458 px          | 0 px          |
+| T1 → T2    | 0.835 | 0.717   | 0 px            | 458 px        |
+| T2 → T3    | 0.566 | 0.395   | 0 px            | 703 px        |
+
+Se observa que el Dice cae significativamente en T2→T3 (0.566), lo cual es consistente con una reducción tumoral marcada: la máscara del tumor en T3 es mucho más pequeña que la de T2, por lo que el overlap se reduce.
+
+---
+
+## Comparación: segmentación puntual vs análisis longitudinal
+
+| Aspecto           | Segmentación puntual (TP1)        | Análisis longitudinal                   |
+| ----------------- | --------------------------------- | --------------------------------------- |
+| **Entrada**       | Una imagen                        | Múltiples imágenes del mismo paciente   |
+| **Pregunta**      | "¿Dónde está el tumor?"           | "¿Cómo evoluciona el tumor?"            |
+| **Salida**        | Máscara + features                | Timeline + métricas + RECIST + heatmaps |
+| **Registro**      | No necesario                      | Obligatorio (alinear timepoints)        |
+| **Valor clínico** | Detección                         | Seguimiento y evaluación de tratamiento |
+| **Segmentación**  | Clásica (K-Means, Region Growing) | Clásica o Deep Learning (nnU-Net)       |
+
+---
+
+## Herramientas y frameworks relacionados
+
+El pipeline longitudinal se inspira en herramientas y estándares de investigación médica:
+
+| Herramienta                                                                                                                            | Relación con el proyecto                                                                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [nnU-Net](https://github.com/MIC-DKFZ/nnUNet)                                                                                          | Framework de segmentación biomédica state-of-the-art; se integra como backend opcional (JuST_BrainPET, Task169) |
+| [JuST_BrainPET](https://nmmitools.org/2024/08/12/just_brainpet-juelich-segmentation-tool-for-amino-acid-pet-brain-tumor-segmentation/) | Modelo pre-entrenado específico para PET cerebral con 18F-FET                                                   |
+| [RECIST 1.1](https://recist.eortc.org/)                                                                                                | Criterios clínicos de evaluación de respuesta tumoral; se implementa una versión simplificada                   |
+| [SimpleITK](https://simpleitk.readthedocs.io/)                                                                                         | Librería de registro de imágenes médicas; recomendada para datos 3D NIfTI                                       |
+| [Yale-Brain-Mets-Longitudinal](https://www.cancerimagingarchive.net/collection/yale-brain-mets-longitudinal/)                          | Dataset longitudinal de 11,892 estudios MRI de 1,430 pacientes con metástasis cerebrales                        |
+| [BraTS 2024](https://brats.readthedocs.io/)                                                                                            | Challenge de segmentación de tumores cerebrales; dataset referente en el campo                                  |

@@ -2,3 +2,12 @@ numpy>=1.24
 opencv-python>=4.8
 matplotlib>=3.7
 scikit-image>=0.22
+pandas>=2.0
+
+# === Dependencias opcionales para nnU-Net (análisis longitudinal 3D) ===
+# Descomentar si se desea usar nnU-Net con JuST_BrainPET:
+#
+# nibabel>=5.0                # Lectura/escritura de NIfTI
+# SimpleITK>=2.3              # Registro de imágenes médicas 3D
+# torch>=2.0                  # Backend de deep learning
+# nnunet                      # pip install git+https://github.com/MIC-DKFZ/nnUNet.git@nnunetv1

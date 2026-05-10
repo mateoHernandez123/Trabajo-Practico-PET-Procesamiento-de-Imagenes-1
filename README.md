@@ -4,12 +4,13 @@
 **Integrantes:** Mateo Hernandez, Felipe Lucero  
 **Repositorio en GitHub:** [github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia](https://github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia)
 
-Este trabajo implementa dos pipelines de procesamiento de imágenes médicas:
+Este trabajo implementa tres pipelines de procesamiento de imágenes médicas:
 
 1. **PET de cuerpo completo** (`segment_pet.py`): segmentación con Region Growing y K-Means sobre imágenes PET.
 2. **MRI cerebral — detección de tumores** (`segment_brain_mri.py`): segmentación con **K-Means**, **SuperPixel SLIC + Clustering** y **Region Growing** sobre el dataset [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) (7,023 imágenes: glioma, meningioma, pituitary, no tumor).
+3. **Análisis longitudinal de tumores PET** (`longitudinal_pet_analysis.py`): seguimiento temporal de tumores cerebrales en imágenes PET del mismo paciente, con segmentación (clásica o [nnU-Net/JuST_BrainPET](https://github.com/MIC-DKFZ/nnUNet)), registro espacial, métricas longitudinales (volumen, Dice, RECIST) y visualización de la evolución tumoral.
 
-Ambos pipelines comparten: preprocesamiento, detección de bordes (Canny), **post-procesamiento morfológico con erosión y dilatación explícitas**, **filtro por forma**, extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por tumor.
+Ambos pipelines de segmentación comparten: preprocesamiento, detección de bordes (Canny), **post-procesamiento morfológico con erosión y dilatación explícitas**, **filtro por forma**, extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por tumor.
 
 ## Cómo ejecutar
 
@@ -26,6 +27,12 @@ python3 segment_brain_mri.py dataset/Testing/glioma/Te-gl_0010.jpg
 
 # MRI cerebral — batch (15 imágenes)
 python3 segment_brain_mri.py dataset/Testing/ --batch --max-images 15 --no-show
+
+# Análisis longitudinal — demo con datos sintéticos
+python3 longitudinal_pet_analysis.py --generate-demo
+
+# Análisis longitudinal — imágenes propias
+python3 longitudinal_pet_analysis.py carpeta_paciente/
 ```
 
 Instrucciones detalladas (venv, Windows/Linux, Git Bash): [docs/Readme.md](docs/Readme.md).  
@@ -82,23 +89,23 @@ Imagen PET de cuerpo completo utilizada como escena de interés. Las zonas oscur
 
 Tras la segmentación, se aplica un pipeline de morfología matemática con **operaciones explícitas** para aislar los tumores descartando captación fisiológica:
 
-| Paso | Operación | Efecto |
-|------|-----------|--------|
-| 1 | **Erosión** (kernel 3×3, 2 iter) | Separa regiones débilmente conectadas, elimina ruido y blobs pequeños de captación fisiológica (ej. cerebro en Region Growing) |
-| 2 | **Dilatación** (kernel 3×3, 3 iter) | Recupera bordes del tumor; la asimetría (3 iter vs 2) captura píxeles de borde con menor captación |
-| 3 | **Cierre** (kernel 3×3, 1 iter) | Sella huecos internos residuales |
-| 4 | **Filtro por área** (≥ 15 px) | Descarta artefactos pequeños |
-| 5 | **Filtro por forma** | Descarta componentes con perfil de órgano (grandes + compactos + sólidos) |
+| Paso | Operación                           | Efecto                                                                                                                         |
+| ---- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | **Erosión** (kernel 3×3, 2 iter)    | Separa regiones débilmente conectadas, elimina ruido y blobs pequeños de captación fisiológica (ej. cerebro en Region Growing) |
+| 2    | **Dilatación** (kernel 3×3, 3 iter) | Recupera bordes del tumor; la asimetría (3 iter vs 2) captura píxeles de borde con menor captación                             |
+| 3    | **Cierre** (kernel 3×3, 1 iter)     | Sella huecos internos residuales                                                                                               |
+| 4    | **Filtro por área** (≥ 15 px)       | Descarta artefactos pequeños                                                                                                   |
+| 5    | **Filtro por forma**                | Descarta componentes con perfil de órgano (grandes + compactos + sólidos)                                                      |
 
 ### Filtro por forma — discriminación órgano vs tumor
 
 Los órganos (cerebro, hígado) presentan captación fisiológica normal en PET. Para distinguirlos de tumores **sin depender de la posición**, se analizan métricas de forma:
 
-| Métrica | Órganos | Tumores |
-|---------|---------|---------|
-| **Compacidad** (4πA/P²) | Alta (> 0.40): forma redondeada | Variable: bordes irregulares |
-| **Solidez** (A/A_convex_hull) | Alta (> 0.65): contorno suave | Variable: más concavidades |
-| **Área** | Grande (> 350 px) | Menor |
+| Métrica                       | Órganos                         | Tumores                      |
+| ----------------------------- | ------------------------------- | ---------------------------- |
+| **Compacidad** (4πA/P²)       | Alta (> 0.40): forma redondeada | Variable: bordes irregulares |
+| **Solidez** (A/A_convex_hull) | Alta (> 0.65): contorno suave   | Variable: más concavidades   |
+| **Área**                      | Grande (> 350 px)               | Menor                        |
 
 Un componente se descarta como órgano si cumple **todas** las condiciones. Esto es independiente de la posición: funciona sin importar dónde estén los tumores en el cuerpo.
 
@@ -197,11 +204,11 @@ De izquierda a derecha: máscara cruda (cerebro enorme) → erosión → dilatac
 
 ### Componentes descartados por filtro por forma
 
-| Método | Área (px) | Compacidad | Solidez | Motivo |
-|--------|-----------|------------|---------|--------|
-| Region Growing | 438 | 0.584 | 0.902 | Cerebro (grande + compacto + sólido) |
-| K-Means | 1296 | 0.755 | 0.976 | Cerebro (grande + compacto + sólido) |
-| K-Means | 595 | 0.459 | 0.849 | Órgano (grande + compacto + sólido) |
+| Método         | Área (px) | Compacidad | Solidez | Motivo                               |
+| -------------- | --------- | ---------- | ------- | ------------------------------------ |
+| Region Growing | 438       | 0.584      | 0.902   | Cerebro (grande + compacto + sólido) |
+| K-Means        | 1296      | 0.755      | 0.976   | Cerebro (grande + compacto + sólido) |
+| K-Means        | 595       | 0.459      | 0.849   | Órgano (grande + compacto + sólido)  |
 
 ---
 
@@ -213,12 +220,12 @@ De izquierda a derecha: máscara cruda (cerebro enorme) → erosión → dilatac
 
 [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) — 7,023 imágenes en 4 categorías:
 
-| Categoría   | Training | Testing | Total |
-|-------------|----------|---------|-------|
-| Glioma      | 1,321    | 300     | 1,621 |
-| Meningioma  | 1,339    | 306     | 1,645 |
-| Pituitary   | 1,457    | 300     | 1,757 |
-| No tumor    | 1,595    | 405     | 2,000 |
+| Categoría  | Training | Testing | Total |
+| ---------- | -------- | ------- | ----- |
+| Glioma     | 1,321    | 300     | 1,621 |
+| Meningioma | 1,339    | 306     | 1,645 |
+| Pituitary  | 1,457    | 300     | 1,757 |
+| No tumor   | 1,595    | 405     | 2,000 |
 
 Descarga automática desde [Zenodo](https://zenodo.org/records/12735702):
 
@@ -250,11 +257,11 @@ Imagen MRI → CLAHE + Gaussiano → Máscara cerebral (Otsu) → Canny (bordes)
 
 ### Tres métodos de segmentación
 
-| Método | Técnica | Detalle |
-|--------|---------|---------|
-| **K-Means** | Clustering directo en intensidades | K=4 clusters; selecciona el más brillante (tumor en MRI con contraste) |
+| Método                             | Técnica                                                                                                                       | Detalle                                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **K-Means**                        | Clustering directo en intensidades                                                                                            | K=4 clusters; selecciona el más brillante (tumor en MRI con contraste)                          |
 | **SuperPixel (SLIC) + Clustering** | SLIC genera ~200 superpíxeles → features por SP (intensidad, std, gradiente Sobel, posición) → K-Means ponderado (6 clusters) | Detecta regiones tumorales con intensidad > media cerebral + 0.8·σ, respetando bordes naturales |
-| **Region Growing** | Semillas desde percentil 85% de intensidad dentro del cerebro → BFS 8-vecinos con tolerancia 20 | Crecimiento adaptativo desde las zonas más brillantes |
+| **Region Growing**                 | Semillas desde percentil 85% de intensidad dentro del cerebro → BFS 8-vecinos con tolerancia 20                               | Crecimiento adaptativo desde las zonas más brillantes                                           |
 
 ---
 
@@ -499,37 +506,37 @@ De izquierda a derecha: máscara cruda → erosión → dilatación → cierre �
 
 #### Glioma (Te-gl_0010) — K-Means (6 tumores)
 
-| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Excent. | Compact. | I. media |
-|----|------|-----------|-------------------|--------------------|----------|---------|----------|----------|
-| 1 | 7682 | 1246.9 | (137.7, 130.2) | (44, 29, 176, 201) | 188.5 / 162.4 | 0.508 | 0.062 | 84.4 |
-| 2 | 105 | 38.4 | (76.9, 102.4) | (71, 97, 13, 12) | 13.3 / 8.7 | 0.757 | 0.896 | 77.5 |
-| 3 | 958 | 142.0 | (134.6, 116.4) | (113, 99, 42, 33) | 43.5 / 31.3 | 0.694 | 0.597 | 91.8 |
-| 4 | 146 | 45.2 | (166.1, 132.7) | (159, 126, 15, 14) | 14.0 / 11.9 | 0.532 | 0.897 | 68.7 |
-| 5 | 134 | 43.0 | (167.3, 153.7) | (162, 147, 12, 15) | 13.3 / 11.5 | 0.501 | 0.912 | 69.7 |
-| 6 | 142 | 44.6 | (190.4, 160.8) | (184, 154, 14, 15) | 14.1 / 11.4 | 0.590 | 0.896 | 59.4 |
+| ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h)  | Ejes M/m      | Excent. | Compact. | I. media |
+| --- | ---- | --------- | ---------------- | ------------------ | ------------- | ------- | -------- | -------- |
+| 1   | 7682 | 1246.9    | (137.7, 130.2)   | (44, 29, 176, 201) | 188.5 / 162.4 | 0.508   | 0.062    | 84.4     |
+| 2   | 105  | 38.4      | (76.9, 102.4)    | (71, 97, 13, 12)   | 13.3 / 8.7    | 0.757   | 0.896    | 77.5     |
+| 3   | 958  | 142.0     | (134.6, 116.4)   | (113, 99, 42, 33)  | 43.5 / 31.3   | 0.694   | 0.597    | 91.8     |
+| 4   | 146  | 45.2      | (166.1, 132.7)   | (159, 126, 15, 14) | 14.0 / 11.9   | 0.532   | 0.897    | 68.7     |
+| 5   | 134  | 43.0      | (167.3, 153.7)   | (162, 147, 12, 15) | 13.3 / 11.5   | 0.501   | 0.912    | 69.7     |
+| 6   | 142  | 44.6      | (190.4, 160.8)   | (184, 154, 14, 15) | 14.1 / 11.4   | 0.590   | 0.896    | 59.4     |
 
 #### Meningioma (Te-me_0010) — K-Means (4 tumores)
 
-| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Excent. | Compact. | I. media |
-|----|------|-----------|-------------------|--------------------|----------|---------|----------|----------|
-| 1 | 10240 | 756.0 | (124.5, 147.4) | (27, 9, 206, 242) | 244.6 / 207.9 | 0.527 | 0.225 | 137.6 |
-| 2 | 183 | 54.3 | (135.0, 114.7) | (127, 107, 17, 17) | 17.5 / 12.8 | 0.683 | 0.780 | 137.0 |
-| 3 | 93 | 35.6 | (134.8, 143.9) | (129, 139, 12, 11) | 11.5 / 8.9 | 0.630 | 0.924 | 140.3 |
-| 4 | 57 | 27.3 | (111.0, 144.0) | (107, 140, 9, 9) | 8.5 / 7.0 | 0.558 | 0.960 | 135.6 |
+| ID  | Área  | Perímetro | Centroide (x, y) | BBox (x, y, w, h)  | Ejes M/m      | Excent. | Compact. | I. media |
+| --- | ----- | --------- | ---------------- | ------------------ | ------------- | ------- | -------- | -------- |
+| 1   | 10240 | 756.0     | (124.5, 147.4)   | (27, 9, 206, 242)  | 244.6 / 207.9 | 0.527   | 0.225    | 137.6    |
+| 2   | 183   | 54.3      | (135.0, 114.7)   | (127, 107, 17, 17) | 17.5 / 12.8   | 0.683   | 0.780    | 137.0    |
+| 3   | 93    | 35.6      | (134.8, 143.9)   | (129, 139, 12, 11) | 11.5 / 8.9    | 0.630   | 0.924    | 140.3    |
+| 4   | 57    | 27.3      | (111.0, 144.0)   | (107, 140, 9, 9)   | 8.5 / 7.0     | 0.558   | 0.960    | 135.6    |
 
 #### Pituitary (Te-pi_0010) — SuperPixel (9 tumores)
 
-| ID | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h) | Ejes M/m | Excent. | Compact. | I. media |
-|----|------|-----------|-------------------|--------------------|----------|---------|----------|----------|
-| 1 | 1361 | 160.6 | (97.6, 68.1) | (72, 44, 45, 50) | 47.3 / 42.6 | 0.436 | 0.663 | 114.5 |
-| 2 | 866 | 114.1 | (152.9, 66.8) | (136, 52, 37, 31) | 37.0 / 29.6 | 0.600 | 0.836 | 118.7 |
-| 3 | 708 | 104.3 | (205.8, 97.8) | (191, 83, 28, 31) | 30.9 / 28.9 | 0.353 | 0.818 | 114.9 |
-| 4 | 641 | 95.7 | (48.8, 97.7) | (35, 85, 28, 27) | 29.3 / 26.7 | 0.410 | 0.880 | 118.1 |
-| 5 | 456 | 83.5 | (44.9, 134.3) | (35, 122, 21, 26) | 26.4 / 21.4 | 0.582 | 0.823 | 116.4 |
-| 6 | 594 | 97.4 | (52.2, 172.7) | (43, 154, 21, 37) | 36.4 / 20.7 | 0.823 | 0.788 | 130.7 |
-| 7 | 1914 | 248.8 | (184.1, 199.9) | (141, 155, 74, 82) | 102.1 / 30.9 | 0.953 | 0.388 | 117.1 |
-| 8 | 407 | 78.8 | (123.5, 201.3) | (109, 191, 29, 20) | 28.0 / 17.7 | 0.775 | 0.824 | 99.3 |
-| 9 | 498 | 99.6 | (108.2, 228.8) | (90, 218, 39, 21) | 43.2 / 14.3 | 0.943 | 0.631 | 124.1 |
+| ID  | Área | Perímetro | Centroide (x, y) | BBox (x, y, w, h)  | Ejes M/m     | Excent. | Compact. | I. media |
+| --- | ---- | --------- | ---------------- | ------------------ | ------------ | ------- | -------- | -------- |
+| 1   | 1361 | 160.6     | (97.6, 68.1)     | (72, 44, 45, 50)   | 47.3 / 42.6  | 0.436   | 0.663    | 114.5    |
+| 2   | 866  | 114.1     | (152.9, 66.8)    | (136, 52, 37, 31)  | 37.0 / 29.6  | 0.600   | 0.836    | 118.7    |
+| 3   | 708  | 104.3     | (205.8, 97.8)    | (191, 83, 28, 31)  | 30.9 / 28.9  | 0.353   | 0.818    | 114.9    |
+| 4   | 641  | 95.7      | (48.8, 97.7)     | (35, 85, 28, 27)   | 29.3 / 26.7  | 0.410   | 0.880    | 118.1    |
+| 5   | 456  | 83.5      | (44.9, 134.3)    | (35, 122, 21, 26)  | 26.4 / 21.4  | 0.582   | 0.823    | 116.4    |
+| 6   | 594  | 97.4      | (52.2, 172.7)    | (43, 154, 21, 37)  | 36.4 / 20.7  | 0.823   | 0.788    | 130.7    |
+| 7   | 1914 | 248.8     | (184.1, 199.9)   | (141, 155, 74, 82) | 102.1 / 30.9 | 0.953   | 0.388    | 117.1    |
+| 8   | 407  | 78.8      | (123.5, 201.3)   | (109, 191, 29, 20) | 28.0 / 17.7  | 0.775   | 0.824    | 99.3     |
+| 9   | 498  | 99.6      | (108.2, 228.8)   | (90, 218, 39, 21)  | 43.2 / 14.3  | 0.943   | 0.631    | 124.1    |
 
 ---
 
@@ -537,25 +544,25 @@ De izquierda a derecha: máscara cruda → erosión → dilatación → cierre �
 
 #### Detección por categoría
 
-| Categoría | Método | Tasa detección | Tumores/imagen (media) | Área media (px) |
-|-----------|--------|---------------|----------------------|----------------|
-| **Glioma** (15 img) | K-Means | 100% (15/15) | 4.3 | 7,962 |
-| | SuperPixel | 100% (15/15) | 4.1 | 7,594 |
-| | Region Growing | 73% (11/15) | 2.1 | 9,831 |
-| **Meningioma** (10 img) | K-Means | 100% (10/10) | 5.0 | 16,951 |
-| | SuperPixel | 90% (9/10) | 4.0 | 8,346 |
-| | Region Growing | 100% (10/10) | 3.7 | 19,466 |
-| **Pituitary** (10 img) | K-Means | 100% (10/10) | 4.9 | 14,012 |
-| | SuperPixel | 100% (10/10) | 4.8 | 11,353 |
-| | Region Growing | 90% (9/10) | 3.3 | 20,652 |
+| Categoría               | Método         | Tasa detección | Tumores/imagen (media) | Área media (px) |
+| ----------------------- | -------------- | -------------- | ---------------------- | --------------- |
+| **Glioma** (15 img)     | K-Means        | 100% (15/15)   | 4.3                    | 7,962           |
+|                         | SuperPixel     | 100% (15/15)   | 4.1                    | 7,594           |
+|                         | Region Growing | 73% (11/15)    | 2.1                    | 9,831           |
+| **Meningioma** (10 img) | K-Means        | 100% (10/10)   | 5.0                    | 16,951          |
+|                         | SuperPixel     | 90% (9/10)     | 4.0                    | 8,346           |
+|                         | Region Growing | 100% (10/10)   | 3.7                    | 19,466          |
+| **Pituitary** (10 img)  | K-Means        | 100% (10/10)   | 4.9                    | 14,012          |
+|                         | SuperPixel     | 100% (10/10)   | 4.8                    | 11,353          |
+|                         | Region Growing | 90% (9/10)     | 3.3                    | 20,652          |
 
 #### Totales
 
-| Método | Tumores totales | Imágenes con detección |
-|--------|----------------|----------------------|
-| K-Means | 164 | 35/35 (100%) |
-| SuperPixel (SLIC) | 149 | 34/35 (97%) |
-| Region Growing | 102 | 30/35 (86%) |
+| Método            | Tumores totales | Imágenes con detección |
+| ----------------- | --------------- | ---------------------- |
+| K-Means           | 164             | 35/35 (100%)           |
+| SuperPixel (SLIC) | 149             | 34/35 (97%)            |
+| Region Growing    | 102             | 30/35 (86%)            |
 
 ### Uso
 
@@ -575,28 +582,239 @@ python3 segment_brain_mri.py dataset/Testing/ --batch --no-show
 
 ---
 
+---
+
+## Análisis Longitudinal de Tumores PET (`longitudinal_pet_analysis.py`)
+
+### Objetivo
+
+Evaluar la **evolución temporal** de tumores cerebrales comparando estudios PET del mismo paciente en distintos momentos. Esto permite determinar si un tumor está creciendo, respondiendo al tratamiento, o se mantiene estable.
+
+### Concepto: Análisis Longitudinal
+
+A diferencia de la segmentación simple (que analiza UNA imagen), el análisis longitudinal:
+
+- Compara **múltiples estudios** del mismo paciente en distintas fechas
+- Calcula **cambio de volumen/área tumoral** a lo largo del tiempo
+- Mide **similitud** entre segmentaciones (Dice, Jaccard)
+- Detecta **nuevas regiones tumorales** o **regiones que desaparecieron**
+- Clasifica la respuesta según criterios **RECIST** simplificados
+- Genera un **reporte clínico** con timeline y métricas
+
+### Pipeline
+
+```
+Timepoint T0 (Ene) ──→ Segmentación ──→ Máscara T0 ─┐
+Timepoint T1 (Abr) ──→ Segmentación ──→ Máscara T1 ─┤
+Timepoint T2 (Jul) ──→ Segmentación ──→ Máscara T2 ─┤──→ Registro ──→ Comparación ──→ Métricas ──→ Reporte
+Timepoint T3 (Oct) ──→ Segmentación ──→ Máscara T3 ─┘
+```
+
+### Métodos de segmentación
+
+| Método                  | Descripción                                                                                                                                                                                                                              | Requisitos                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **classical** (default) | K-Means + morfología sobre imágenes 2D                                                                                                                                                                                                   | numpy, opencv-python          |
+| **nnunet**              | [nnU-Net v1](https://github.com/MIC-DKFZ/nnUNet) con modelo pre-entrenado [JuST_BrainPET](https://nmmitools.org/2024/08/12/just_brainpet-juelich-segmentation-tool-for-amino-acid-pet-brain-tumor-segmentation/) (Task169_BrainTumorPET) | PyTorch, nnU-Net v1, NIfTI 3D |
+
+### Métricas longitudinales
+
+| Métrica                      | Fórmula / Descripción                                            |
+| ---------------------------- | ---------------------------------------------------------------- |
+| **Área tumoral**             | Suma de píxeles del tumor en cada timepoint                      |
+| **Cambio absoluto**          | Área(t) - Área(t-1)                                              |
+| **Cambio porcentual**        | (Área(t) - Área(t-1)) / Área(t-1) × 100                          |
+| **Cambio vs baseline**       | (Área(t) - Área(T0)) / Área(T0) × 100                            |
+| **Dice Similarity**          | 2\|A∩B\| / (\|A\|+\|B\|) — similitud entre máscaras consecutivas |
+| **Jaccard (IoU)**            | \|A∩B\| / \|A∪B\| — overlap entre máscaras                       |
+| **Desplazamiento centroide** | Distancia euclidiana entre centroides del tumor                  |
+| **Nuevas regiones**          | Píxeles tumorales que aparecen respecto al timepoint anterior    |
+| **Regiones desaparecidas**   | Píxeles tumorales que se resolvieron                             |
+| **Intensidad media**         | Proxy de actividad metabólica (captación PET)                    |
+| **Clasificación RECIST**     | CR (>90% reducción), PR (>30%), SD (estable), PD (>20% aumento)  |
+
+### Uso
+
+```bash
+# Demo con datos sintéticos (no requiere imágenes externas):
+python3 longitudinal_pet_analysis.py --generate-demo
+
+# Analizar imágenes de un paciente (directorio):
+python3 longitudinal_pet_analysis.py carpeta_paciente/
+
+# Analizar imágenes individuales:
+python3 longitudinal_pet_analysis.py img_t0.png img_t1.png img_t2.png
+
+# Sin ventanas matplotlib:
+python3 longitudinal_pet_analysis.py --generate-demo --no-show
+
+# Con nnU-Net (requiere instalación previa):
+python3 longitudinal_pet_analysis.py carpeta_nifti/ --method nnunet
+```
+
+### Demo: escenario clínico simulado
+
+El modo `--generate-demo` simula un caso clínico con 4 timepoints:
+
+| Timepoint      | Fecha    | Escenario                                      | Área tumoral |
+| -------------- | -------- | ---------------------------------------------- | ------------ |
+| T0_baseline    | Ene 2025 | Tumor detectado — línea base                   | 1,162 px     |
+| T1_crecimiento | Abr 2025 | Tumor crece (+39.4%) — sin tratamiento         | 1,620 px     |
+| T2_tratamiento | Jul 2025 | Tratamiento iniciado, tumor vuelve al baseline | 1,162 px     |
+| T3_respuesta   | Oct 2025 | Buena respuesta (-60.5% vs baseline)           | 459 px       |
+
+#### Comparación temporal — Imagen + segmentación por timepoint
+
+<p align="center">
+  <img src="resultados_longitudinal_samples/comparacion_temporal.png" alt="Comparación temporal — overlay de segmentación por timepoint" width="800">
+</p>
+
+**Qué es:** fila superior: imagen PET cerebral sintética con overlay verde de la segmentación tumoral en cada timepoint. Fila inferior: máscara binaria con el cambio porcentual y clasificación RECIST. Se observa el crecimiento en T1 (+39.4%), la estabilización en T2 (-28.3%) tras inicio de tratamiento, y la respuesta parcial en T3 (-60.5%).
+
+#### Timeline de evolución del volumen tumoral
+
+<p align="center">
+  <img src="resultados_longitudinal_samples/timeline_volumen.png" alt="Timeline de evolución del área tumoral" width="700">
+</p>
+
+**Qué es:** gráfico de línea mostrando la evolución del área tumoral (en píxeles) a lo largo de los 9 meses. La línea punteada roja marca el pico tumoral en T1 (1620 px). La curva muestra el patrón típico de: detección → crecimiento → tratamiento → respuesta.
+
+#### Mapa de cambios tumorales (heatmap)
+
+<p align="center">
+  <img src="resultados_longitudinal_samples/heatmaps_cambio_resumen.png" alt="Heatmap de cambios tumorales entre timepoints" width="750">
+</p>
+
+**Qué es:** mapa de cambios entre timepoints consecutivos. **Rojo** = píxeles de crecimiento tumoral (nuevas regiones). **Verde** = píxeles de reducción (tumor que desapareció). **Cyan/Amarillo** = tumor estable. Se ve claramente el crecimiento de T0→T1 (borde rojo), y la reducción progresiva en T1→T2 y T2→T3 (bordes verdes).
+
+#### Dashboard de métricas longitudinales
+
+<p align="center">
+  <img src="resultados_longitudinal_samples/dashboard_metricas.png" alt="Dashboard de métricas longitudinales con RECIST" width="750">
+</p>
+
+**Qué es:** dashboard con 4 paneles: (1) área tumoral por timepoint (barras coloreadas por tendencia), (2) cambio porcentual respecto al baseline con umbrales RECIST (PR=-30%, PD=+20%), (3) curva de Dice Similarity entre timepoints consecutivos, (4) tabla resumen con clasificación RECIST por timepoint.
+
+#### Timepoints individuales — overlay de segmentación
+
+<p align="center">
+  <img src="resultados_longitudinal_samples/timepoints/T0_baseline_overlay.png" alt="T0 baseline — overlay" width="150">
+  <img src="resultados_longitudinal_samples/timepoints/T1_crecimiento_overlay.png" alt="T1 crecimiento — overlay" width="150">
+  <img src="resultados_longitudinal_samples/timepoints/T2_tratamiento_overlay.png" alt="T2 tratamiento — overlay" width="150">
+  <img src="resultados_longitudinal_samples/timepoints/T3_respuesta_overlay.png" alt="T3 respuesta — overlay" width="150">
+</p>
+
+De izquierda a derecha: T0 (baseline, tumor detectado) → T1 (crecimiento, sin tratamiento) → T2 (inicio de tratamiento, reducción) → T3 (buena respuesta, tumor reducido significativamente).
+
+#### Heatmaps de cambio individuales
+
+<p align="center">
+  <img src="resultados_longitudinal_samples/heatmaps_cambio/cambio_T0_baseline_a_T1_crecimiento.png" alt="Cambio T0→T1" width="200">
+  <img src="resultados_longitudinal_samples/heatmaps_cambio/cambio_T1_crecimiento_a_T2_tratamiento.png" alt="Cambio T1→T2" width="200">
+  <img src="resultados_longitudinal_samples/heatmaps_cambio/cambio_T2_tratamiento_a_T3_respuesta.png" alt="Cambio T2→T3" width="200">
+</p>
+
+De izquierda a derecha: T0→T1 (crecimiento, rojo en bordes), T1→T2 (reducción, verde en bordes), T2→T3 (mayor reducción).
+
+#### Métricas longitudinales (CSV)
+
+| Timepoint      | Fecha      | Área (px) | Cambio vs anterior | Cambio vs baseline | Dice  | RECIST                     |
+| -------------- | ---------- | --------- | ------------------ | ------------------ | ----- | -------------------------- |
+| T0_baseline    | 2025-01-15 | 1,162     | —                  | —                  | —     | Baseline                   |
+| T1_crecimiento | 2025-04-15 | 1,620     | +39.4%             | +39.4%             | 0.835 | PD (Enfermedad Progresiva) |
+| T2_tratamiento | 2025-07-14 | 1,162     | -28.3%             | 0.0%               | 0.835 | SD (Enfermedad Estable)    |
+| T3_respuesta   | 2025-10-12 | 459       | -60.5%             | -60.5%             | 0.566 | PR (Respuesta Parcial)     |
+
+**Evaluación final:** Respuesta Parcial (PR) — el tumor muestra **buena respuesta** al tratamiento con una reducción del 60.5% respecto al baseline.
+
+### Salidas generadas
+
+```
+resultados_longitudinal/demo_resultados/
+├── comparacion_temporal.png         # Grilla: imagen + segmentación por timepoint
+├── timeline_volumen.png             # Gráfico: evolución del área tumoral
+├── heatmaps_cambio_resumen.png      # Mapa de cambios (rojo=crece, verde=reduce)
+├── dashboard_metricas.png           # Dashboard con área, cambio%, Dice, tabla RECIST
+├── metricas_longitudinales.csv      # CSV con todas las métricas
+├── reporte.txt                      # Reporte de texto con evaluación clínica
+├── timepoints/                      # Imágenes individuales por timepoint
+│   ├── T0_baseline_imagen.png
+│   ├── T0_baseline_mascara.png
+│   ├── T0_baseline_overlay.png
+│   └── ...
+└── heatmaps_cambio/                 # Heatmaps de cambio entre pares
+    ├── cambio_T0_baseline_a_T1_crecimiento.png
+    ├── cambio_T1_crecimiento_a_T2_tratamiento.png
+    └── cambio_T2_tratamiento_a_T3_respuesta.png
+```
+
+### Integración con nnU-Net (opcional, para datos 3D)
+
+Para utilizar el modelo pre-entrenado [JuST_BrainPET](https://github.com/MIC-DKFZ/nnUNet/blob/nnunetv1/readme.md) de nnU-Net para segmentación automática de tumores en PET cerebrales:
+
+```bash
+# 1. Instalar PyTorch
+pip install torch
+
+# 2. Instalar nnU-Net v1
+pip install git+https://github.com/MIC-DKFZ/nnUNet.git@nnunetv1
+
+# 3. Configurar variables de entorno
+export nnUNet_raw_data_base=/path/to/nnUNet_raw
+export nnUNet_preprocessed=/path/to/nnUNet_preprocessed
+export RESULTS_FOLDER=/path/to/nnUNet_results
+
+# 4. Descargar modelo pre-entrenado (Task169_BrainTumorPET)
+nnUNet_download_pretrained_model Task169_BrainTumorPET
+
+# 5. Ejecutar análisis longitudinal con nnU-Net
+python3 longitudinal_pet_analysis.py carpeta_nifti/ --method nnunet
+```
+
+**JuST_BrainPET** (Juelich Segmentation Tool):
+
+- Modelo entrenado para segmentar tumores en PET cerebrales con trazador 18F-FET
+- Configuración: nnU-Net v1, 3d_fullres, patch 64×192×192 mm
+- Performance: F1=92%, Sensibilidad=93%, PPV=95%
+- Paper: [Lohmann et al., J Nucl Med, 2023](https://jnm.snmjournals.org/content/64/10/1594)
+
+### Datasets recomendados para análisis longitudinal
+
+| Dataset                                                                                                       | Modalidad                | Pacientes | Estudios | Acceso                |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------ | --------- | -------- | --------------------- |
+| [Yale-Brain-Mets-Longitudinal](https://www.cancerimagingarchive.net/collection/yale-brain-mets-longitudinal/) | MRI (T1, T1c, T2, FLAIR) | 1,430     | 11,892   | TCIA (43GB)           |
+| [BraTS 2024](https://huggingface.co/datasets/PallabDev/BraTS-2024-Complete)                                   | MRI multiparamétrico     | 2,728+    | 2,728+   | HuggingFace / Synapse |
+| [TCIA Cancer Imaging Archive](https://www.cancerimagingarchive.net/)                                          | PET/MRI/CT               | Varios    | Varios   | Libre                 |
+
+---
+
 ## Estructura del proyecto
 
-| Ruta                         | Contenido                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------ |
-| `README.md`                  | Este archivo: resumen, figuras y estructura                                                      |
-| `segment_pet.py`             | Pipeline PET: preprocesamiento, bordes, segmentación, morfología, filtro por forma, features, recortes |
-| `segment_brain_mri.py`       | Pipeline MRI cerebral: CLAHE, SuperPixel SLIC, K-Means, Region Growing, detección de tumores     |
-| `requirements.txt`           | Dependencias (numpy, opencv-python, matplotlib, scikit-image)                                    |
-| `dataset/`                   | Brain Tumor MRI Dataset (descargar desde Zenodo, ver instrucciones arriba)                       |
-| `imagenes/`                  | Carpeta de entrada PET; por defecto `pet_cuerpo_completo.png`                                    |
-| `resultados/`                | Salidas del pipeline PET (PNG, CSV, recortes, pasos morfológicos)                                |
-| `resultados_mri/`            | Salidas del pipeline MRI (generadas al ejecutar, gitignored)                                     |
-| `resultados_mri_samples/`    | Ejemplos de resultados MRI commiteados (glioma, meningioma, pituitary) para visualizar en GitHub |
-| `docs/Readme.md`             | Instalación, entorno virtual y salidas                                                           |
-| `docs/doc.md`                | Informe / respuestas a la consigna                                                               |
-| `.gitignore`                 | Excluye venv/, cachés, dataset/ y resultados_mri/                                                |
+| Ruta                               | Contenido                                                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `README.md`                        | Este archivo: resumen, figuras y estructura                                                                 |
+| `segment_pet.py`                   | Pipeline PET: preprocesamiento, bordes, segmentación, morfología, filtro por forma, features, recortes      |
+| `segment_brain_mri.py`             | Pipeline MRI cerebral: CLAHE, SuperPixel SLIC, K-Means, Region Growing, detección de tumores                |
+| `longitudinal_pet_analysis.py`     | **Análisis longitudinal**: seguimiento temporal de tumores PET, registro espacial, métricas RECIST, nnU-Net |
+| `requirements.txt`                 | Dependencias (numpy, opencv-python, matplotlib, scikit-image, pandas)                                       |
+| `dataset/`                         | Brain Tumor MRI Dataset (descargar desde Zenodo, ver instrucciones arriba)                                  |
+| `imagenes/`                        | Carpeta de entrada PET; por defecto `pet_cuerpo_completo.png`                                               |
+| `resultados/`                      | Salidas del pipeline PET (PNG, CSV, recortes, pasos morfológicos)                                           |
+| `resultados_mri/`                  | Salidas del pipeline MRI (generadas al ejecutar, gitignored)                                                |
+| `resultados_mri_samples/`          | Ejemplos de resultados MRI commiteados (glioma, meningioma, pituitary) para visualizar en GitHub            |
+| `resultados_longitudinal/`         | Salidas del análisis longitudinal (demo + datos reales, gitignored)                                         |
+| `resultados_longitudinal_samples/` | Resultados demo del análisis longitudinal commiteados para visualizar en GitHub                             |
+| `docs/Readme.md`                   | Instalación, entorno virtual y salidas                                                                      |
+| `docs/doc.md`                      | Informe / respuestas a la consigna                                                                          |
+| `.gitignore`                       | Excluye venv/, cachés, dataset/, resultados_mri/ y resultados_longitudinal/                                 |
 
 ### Parámetros ajustables
 
 **PET** (`segment_pet.py`): `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL/ITERATIONS`, `DILATE_KERNEL/ITERATIONS`, `ORGAN_MIN_AREA/COMPACTNESS/SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW/HIGH`, `CROP_PAD`.
 
 **MRI** (`segment_brain_mri.py`): `SLIC_N_SEGMENTS`, `SLIC_COMPACTNESS`, `SLIC_SIGMA`, `KMEANS_K`, `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `MIN_LESION_AREA`, `ERODE_KERNEL/ITERATIONS`, `DILATE_KERNEL/ITERATIONS`, `ORGAN_MIN_AREA/COMPACTNESS/SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW/HIGH`, `TARGET_SIZE`.
+
+**Longitudinal** (`longitudinal_pet_analysis.py`): `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL/ITERATIONS`, `DILATE_KERNEL/ITERATIONS`, `MORPH_KERNEL`, `RECIST_CR_THRESHOLD`, `RECIST_PR_THRESHOLD`, `RECIST_PD_THRESHOLD`.
 
 ---
 

@@ -1,0 +1,31 @@
+{
+  "patient_id": "DEMO_001",
+  "modality": "PET_sintetico",
+  "description": "Datos sintéticos para demostración de análisis longitudinal",
+  "timepoints": [
+    {
+      "label": "T0_baseline",
+      "date": "2025-01-15T00:00:00",
+      "image": "T0_baseline_2025-01.png",
+      "mask": "T0_baseline_2025-01_mask.png"
+    },
+    {
+      "label": "T1_crecimiento",
+      "date": "2025-04-15T00:00:00",
+      "image": "T1_crecimiento_2025-04.png",
+      "mask": "T1_crecimiento_2025-04_mask.png"
+    },
+    {
+      "label": "T2_tratamiento",
+      "date": "2025-07-14T00:00:00",
+      "image": "T2_tratamiento_2025-07.png",
+      "mask": "T2_tratamiento_2025-07_mask.png"
+    },
+    {
+      "label": "T3_respuesta",
+      "date": "2025-10-12T00:00:00",
+      "image": "T3_respuesta_2025-10.png",
+      "mask": "T3_respuesta_2025-10_mask.png"
+    }
+  ]
+}

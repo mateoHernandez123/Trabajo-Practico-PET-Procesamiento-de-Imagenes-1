@@ -1,0 +1,26 @@
+======================================================================
+  REPORTE DE ANÁLISIS LONGITUDINAL — DEMO_001
+  Generado: 2026-05-10 15:50
+======================================================================
+
+  Numero de timepoints: 4
+  Periodo: 2025-01-15 -- 2025-10-12
+
+  EVOLUCIÓN TUMORAL
+  ------------------------------------------------------------
+  T0_baseline             Fecha: 2025-01-15  Área:  1162 px  Cambio:    0.0%  Baseline
+  T1_crecimiento          Fecha: 2025-04-15  Área:  1620 px  Cambio: +  39.4%  PD (Enfermedad Progresiva)
+  T2_tratamiento          Fecha: 2025-07-14  Área:  1162 px  Cambio:  -28.3%  SD (Enfermedad Estable)
+  T3_respuesta            Fecha: 2025-10-12  Área:   459 px  Cambio:  -60.5%  PR (Respuesta Parcial)
+
+  RESUMEN
+  ------------------------------------------------------------
+  Área baseline:         1162 px
+  Área final:            459 px
+  Cambio total:          -60.5%
+  Pico tumoral:          1620 px (T1_crecimiento)
+  Evaluacion final:      PR (Respuesta Parcial)
+
+  >> El tumor muestra BUENA RESPUESTA al tratamiento.
+
+======================================================================
