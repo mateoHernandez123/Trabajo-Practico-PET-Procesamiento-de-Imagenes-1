@@ -9,8 +9,15 @@ build/
 
 # Virtual environments
 .venv/
+.venv-brats21/
 venv/
 env/
+
+# BraTS21 pesos y datos descargados / generados (no se versionan)
+external/BraTS21/checkpoints/
+data/brats21_synth/
+resultados_brats21/
+final_weights_brats21.zip
 
 # IDE
 .vscode/

@@ -16,6 +16,12 @@ python3 segment_pet.py
 Instrucciones detalladas (venv, Windows/Linux, Git Bash): [docs/Readme.md](docs/Readme.md).  
 Respuestas y justificaciones de la consigna: [docs/doc.md](docs/doc.md).
 
+> Rama paralela `feat/brats21-pretrained-integration`: integra el modelo
+> pre-entrenado [Alxaline/BraTS21](https://github.com/Alxaline/BraTS21)
+> (segmentación 3D de tumor cerebral en MRI) con scripts wrappers para
+> correr la inferencia end-to-end en CPU + Windows. Ver
+> [docs/brats21.md](docs/brats21.md).
+
 La carpeta `resultados/` se genera al ejecutar el script. La imagen de entrada debe estar en `imagenes/pet_cuerpo_completo.png` (ver [docs/Readme.md](docs/Readme.md) para usar otra ruta).
 
 ---
