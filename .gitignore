@@ -16,6 +16,7 @@ env/
 # BraTS21 pesos y datos descargados / generados (no se versionan)
 external/BraTS21/checkpoints/
 data/brats21_synth/
+data/msd_brats/
 resultados_brats21/
 final_weights_brats21.zip
 

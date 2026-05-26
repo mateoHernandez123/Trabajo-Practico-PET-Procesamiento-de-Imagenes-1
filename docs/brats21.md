@@ -198,9 +198,11 @@ Produce un PNG con 3 planos centrales (axial, coronal, sagital) × 4 modalidades
 - 🟢 verde = ED (edema, etiqueta 2)
 - 🔴 rojo = ET (enhancing tumor, etiqueta 4)
 
-## 9. Validación: caso sintético
+## 9. Validación
 
-Para verificar la plomería sin esperar la descarga de un dataset real (que pueden ser GBs), se incluye un generador sintético:
+### 9.1 Caso sintético (smoke test del pipeline)
+
+Para verificar la plomería sin esperar a descargar un dataset real:
 
 ```bash
 .venv-brats21/Scripts/python.exe scripts/brats21_make_synthetic_case.py \
@@ -209,32 +211,67 @@ Para verificar la plomería sin esperar la descarga de un dataset real (que pued
 
 Genera `data/brats21_synth/BraTS_synth_001/` con 4 NIfTI de 240×240×155 (mismas dimensiones que BraTS real), donde el "cerebro" es una elipsoide con un "tumor" focal hiperintenso plantado en posición conocida.
 
-**Resultados medidos en este equipo** (Windows 11, Python 3.11, sin GPU, sobre el caso sintético):
+**Resultados medidos en este equipo** (Windows 11, Python 3.11, sin GPU):
 
 | Variante | Tiempo CPU | Voxels NCR/NET | Voxels ED | Voxels ET |
 |----------|-----------:|---------------:|----------:|----------:|
 | Smoke test (pesos aleatorios) | ~106 s | 1.146.239 | 132.772 | 3.882.512 |
-| **fold0_ns (pre-entrenado)** | **98 s** | **623** | **60** | **1.075** |
+| **fold0_ns (pre-entrenado)** | ~98 s | **623** | **60** | **1.075** |
 
-**Interpretación:** con pesos aleatorios el modelo predice tumor "por todos lados" (5+ millones de voxels). Con los pesos pre-entrenados, el modelo identifica **únicamente** la región del tumor sintético plantado (~1.700 voxels totales, coherente con la elipsoide de ~3.000 voxels del generador). La diferencia confirma que:
+Con pesos pre-entrenados, el modelo identifica únicamente la región del tumor sintético plantado (~1.700 voxels contra ~5 M con pesos random). Confirma que la integración carga los pesos correctamente.
 
-1. Los pesos se cargan correctamente en nuestra instancia de `EquiUnetASSPEvo`.
-2. El pre-procesamiento (crop al foreground + z-score por canal) es correcto.
-3. El sliding-window 3D y el post-procesamiento (threshold + componente conexa más grande) producen una máscara compacta y plausible.
+### 9.2 Caso real del Medical Decathlon — con Dice score contra ground truth
 
-Visualización del smoke test: `resultados_brats21/real_fold0/preview.png` (3 planos × 4 modalidades, con el tumor detectado visible en azul en las vistas sagitales).
+Para validar precisión real, se descarga el caso `BRATS_001` del Medical Segmentation Decathlon (subconjunto público de BraTS 2017, con ground truth anotado por radiólogos):
 
-## 10. Cómo evaluar la precisión con un caso real
+```bash
+.venv-brats21/Scripts/python.exe scripts/brats21_download_msd_case.py --case BRATS_001
+.venv-brats21/Scripts/python.exe scripts/brats21_split_msd_case.py \
+    --case BRATS_001 --raw data/msd_brats/_raw_msd --out data/msd_brats/BRATS_001
+```
 
-Si el dataset descargado incluye **ground truth** (segmentación experta, archivo `*_seg.nii.gz`), se puede computar el Dice score por sub-región para comparar contra los ~0.88 reportados en el paper. La fórmula es:
+El primer script hace un **streaming-extract del tar de 7 GB del Decathlon** para bajar solo los ~11 MB del caso pedido (gracias a que tar es un formato secuencial y se puede cortar la conexión apenas se obtiene lo necesario). El segundo separa el NIfTI 4D del Decathlon en los 4 archivos esperados por el runner y remapea las etiquetas (Decathlon: 0/1/2/3 → BraTS estándar: 0/1/2/4).
+
+**Resultados medidos sobre `BRATS_001`** (caso real con tumor de 111.724 voxels totales: NCR=27.189, ED=53.050, ET=31.485):
+
+<p align="center">
+  <img src="figuras/brats21/msd_brats_001_fold0_vs_gt.png" alt="BraTS_001: ground truth vs predicción del modelo" width="800">
+</p>
+
+Comparativa ground truth (fila superior) vs predicción del modelo (fila inferior) sobre la modalidad FLAIR, en los 3 planos centrales del tumor.
+
+| Variante | Tiempo CPU | Dice WT | Dice TC | Dice ET | Dice mean |
+|----------|-----------:|--------:|--------:|--------:|----------:|
+| fold0_ns, ROI 96, overlap 0.25 | **48.6 s** | **0.9119** | 0.6288 | **0.8942** | **0.8117** |
+| fold0_ns, ROI 128, overlap 0.5 (recomendado del paper) | 76.4 s | 0.9036 | 0.6157 | 0.8921 | 0.8038 |
+| **Ensamble 10 folds, ROI 96, overlap 0.25** | **496.7 s** | **0.9121** | 0.6273 | **0.8943** | 0.8112 |
+| Paper (1 fold, sin TTA, sobre validación oficial) | — | ~0.92 | ~0.87 | ~0.83 | ~0.87 |
+| Paper (ensamble 10 folds + TTA, sobre validación oficial) | — | 0.925 | 0.876 | 0.840 | **0.881** |
+
+**Observaciones:**
+
+- **WT** (Whole Tumor) y **ET** (Enhancing Tumor) están casi en lo reportado por el paper. El modelo detecta correctamente la extensión completa del tumor y su núcleo realzante.
+- **TC** (Tumor Core) sale más bajo porque en este caso particular (`BRATS_001` del Decathlon, un caso del set público de BraTS 2017, no necesariamente representativo) el modelo sobre-predice el core a expensas del edema: la sub-región roja (ET) coincide casi perfecto entre GT y predicción, pero la asignación de los voxels restantes a "necrosis" (azul) vs "edema" (verde) está sesgada hacia necrosis.
+- **El ensamble completo de 10 folds da el mismo Dice que un solo fold** en este caso (mejora 0.0002 en WT y 0.0001 en ET; TC también idéntico). Esto sugiere que el techo de precisión está marcado por el caso particular, no por la variabilidad entre folds. Para otros casos del dataset, el ensamble típicamente mejora más.
+- **El ROI más grande (128 vs 96) y mayor overlap (0.5 vs 0.25) no mejoran en este caso** — la diferencia entre las dos primeras filas es menor al ruido entre folds.
+- **Sin TTA y sin `replace_value`**: las diferencias con el paper (~0.87 mean vs nuestro 0.81 en este caso) están dentro de lo esperado al no aplicar TTA ni los post-procesamientos avanzados. El paper aplica 8 augmentaciones por inferencia, lo que típicamente da +1–2 puntos de Dice.
+
+## 10. Evaluación con Dice score
+
+```bash
+.venv-brats21/Scripts/python.exe scripts/brats21_eval_dice.py \
+    --pred resultados_brats21/<corrida>/<case_id>_seg.nii.gz \
+    --gt   data/msd_brats/<case_id>/<case_id>_seg.nii.gz \
+    --json resultados_brats21/<corrida>/dice_scores.json
+```
+
+El script computa Dice por sub-región (WT, TC, ET) usando:
 
 $$
 \text{Dice}(A, B) = \frac{2 \cdot |A \cap B|}{|A| + |B|}
 $$
 
-donde A es la predicción binaria y B la ground truth, para cada sub-región (WT, TC, ET) por separado.
-
-Esto se puede implementar en pocas líneas con `monai.metrics.DiceMetric`. Si los integrantes quieren agregarlo, sumar un script `scripts/brats21_eval.py` que tome `--pred` y `--gt` y devuelva los 3 Dices.
+donde A es la predicción binaria y B la ground truth, para cada sub-región por separado, y guarda los resultados como JSON para tracking.
 
 ## 11. Limitaciones reconocidas
 
@@ -252,15 +289,21 @@ Esto se puede implementar en pocas líneas con `monai.metrics.DiceMetric`. Si lo
 | `external/BraTS21/` | Repo upstream clonado sin modificar | ✅ |
 | `external/BraTS21/checkpoints/` | Pesos descargados (~617 MB) | ❌ (en `.gitignore`) |
 | `scripts/brats21_download_weights.py` | Descarga pesos desde Google Drive | ✅ |
+| `scripts/brats21_download_msd_case.py` | Descarga selectiva (streaming-tar) de un caso real de Medical Decathlon | ✅ |
+| `scripts/brats21_split_msd_case.py` | Convierte NIfTI 4D del Decathlon al formato BraTS estándar | ✅ |
 | `scripts/brats21_make_synthetic_case.py` | Generador de caso MRI sintético | ✅ |
 | `scripts/brats21_make_smoke_fold.py` | Fold con pesos random para smoke test | ✅ |
 | `scripts/brats21_run_inference.py` | Runner CPU end-to-end | ✅ |
-| `scripts/brats21_visualize.py` | Generador de PNG con segmentación superpuesta | ✅ |
+| `scripts/brats21_eval_dice.py` | Dice score por sub-región (WT, TC, ET) | ✅ |
+| `scripts/brats21_visualize.py` | Generador de PNG con segmentación superpuesta sobre 4 modalidades | ✅ |
+| `scripts/brats21_visualize_vs_gt.py` | PNG comparativo ground truth vs predicción | ✅ |
 | `requirements-brats21.txt` | Dependencias modernas (Python 3.11) | ✅ |
 | `docs/brats21.md` | Este documento | ✅ |
+| `docs/figuras/brats21/` | Figuras de resultados sobre el caso real BRATS_001 | ✅ |
 | `.venv-brats21/` | Venv aislado | ❌ |
 | `data/brats21_synth/` | Caso sintético generado | ❌ |
-| `resultados_brats21/` | Salidas de inferencia (NIfTI + PNG) | ❌ |
+| `data/msd_brats/` | Caso real descargado del Medical Decathlon | ❌ |
+| `resultados_brats21/` | Salidas de inferencia (NIfTI + PNG + JSON Dice) | ❌ |
 
 ## 13. Referencias
 
