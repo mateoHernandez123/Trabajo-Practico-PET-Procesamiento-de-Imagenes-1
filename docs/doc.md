@@ -236,3 +236,94 @@ El flag `--filter-anatomy` descarta componentes por ubicación y tamaño:
 - **Centroide debajo del 93%:** vejiga (acumula trazador)
 
 > **Limitación:** es una heurística basada en posición relativa. Un enfoque riguroso requeriría atlas anatómico o delimitación manual de ROIs.
+
+---
+
+## 7. Extensión: detección de tumores cerebrales con modelo pre-entrenado
+
+> Implementada en la rama `feat/brats21-pretrained-integration`.  
+> Documentación técnica completa: [brats21.md](brats21.md).
+
+### 7.1 ¿Por qué esta extensión?
+
+La cátedra recomendó incorporar el uso de **modelos pre-entrenados** para mejorar la tasa de detección de tumores cerebrales, en lugar de entrenar uno propio. La justificación es directa:
+
+| Criterio | Pista 1 (PET clásico) | Pista 2 (Brain MRI con modelo pre-entrenado) |
+|----------|----------------------|---------------------------------------------|
+| **Disponibilidad de datos anotados** | No requiere anotaciones (no supervisado) | Cero — el modelo ya fue entrenado por terceros |
+| **Reproducibilidad de criterios clínicos** | Depende de umbrales y kernels elegidos | Depende del corpus de entrenamiento (BraTS 2021, 1.251 pacientes) |
+| **Precisión sobre el dominio objetivo** | Buena para lesiones focales contrastadas | Estado del arte sobre BraTS: Dice ~0.88 promedio |
+| **Esfuerzo de desarrollo** | Implementación completa | Integración + wrappers |
+| **Generalización a casos no vistos** | Limitada (parámetros calibrados a la imagen ejemplo) | Alta (entrenado sobre 1.251 casos heterogéneos) |
+
+La idea no es **reemplazar** la Pista 1 sino **complementarla**: la pista 1 demuestra dominio de las técnicas clásicas de la materia (morfología, segmentación por crecimiento de regiones, clustering, caracterización por forma); la pista 2 muestra cómo, cuando el problema lo justifica y existe un modelo pre-entrenado adecuado, se puede obtener un salto cualitativo en precisión sin entrar al complejo proceso de entrenar deep learning desde cero.
+
+### 7.2 ¿Qué modelo se eligió y por qué?
+
+[Alxaline/BraTS21](https://github.com/Alxaline/BraTS21) — solución del autor al desafío **RSNA/ASNR/MICCAI Brain Tumor Segmentation 2021** (publicación: Carré et al., 2022, BrainLes 2021). Se eligió por cumplir simultáneamente todos estos criterios:
+
+1. **Pesos publicados** (Apache 2.0) descargables sin pedir permiso (~617 MB para 10 folds).
+2. **Resultados competitivos** del challenge oficial: Dice 0.92 (WT) / 0.88 (TC) / 0.84 (ET) sobre la validación oficial — del nivel de los top-5 del challenge.
+3. **Código abierto completo** del autor, lo que permite construir wrappers sin modificar el upstream.
+4. **Ensamble multi-fold** ya armado: 5 folds con criterio Dice + 5 con criterio Jaccard, promediables para mejorar robustez.
+
+### 7.3 ¿Qué problema resuelve concretamente?
+
+Dado un caso de **MRI cerebral multimodal** del paciente (4 volúmenes 3D registrados espacialmente: T1, T1ce, T2, FLAIR), produce un volumen de etiquetas con la segmentación de las tres sub-regiones tumorales que define el challenge BraTS:
+
+- **WT (Whole Tumor)** = unión de necrosis, edema y tumor realzante → delimita la lesión completa
+- **TC (Tumor Core)** = necrosis + tumor realzante → marca el núcleo activo
+- **ET (Enhancing Tumor)** = solo el tumor que capta contraste → identifica la parte más agresiva (típicamente glioblastoma)
+
+### 7.4 Decisiones de diseño en la integración
+
+Tres incompatibilidades del repo upstream con nuestro entorno (Windows 11, Python 3.11, sin GPU) y cómo se resolvieron:
+
+| Problema upstream | Solución elegida |
+|-------------------|------------------|
+| `import resource` (módulo solo UNIX) en `src/main_inference.py` | Bypasear `main_inference.py` y `Engine` enteros con un runner standalone propio |
+| `assert torch.cuda.is_available()` hardcodeado | Runner que usa `torch.device("cpu")` por default y permite cambiar a `"cuda"` con un flag |
+| Dependencias muertas (MONAI 0.6, scikit-learn 0.23, pyradiomics 3.0, ranger21) no instalables en Python 3.11 | Nuevo `requirements-brats21.txt` con versiones modernas (torch 2.12 CPU, MONAI 1.3) en un venv aislado |
+
+**Principio rector:** no se modifica una sola línea de `external/BraTS21/`. Todas las adaptaciones viven en `scripts/`. Esto permite actualizar el upstream en el futuro sin conflictos.
+
+### 7.5 Validación que se hizo
+
+Para verificar que la integración funciona sin esperar a descargar un dataset real, se construyó un **caso MRI sintético** con la misma estructura BraTS (4 modalidades de 240×240×155, "cerebro" elipsoidal con un "tumor" focal plantado).
+
+Resultados medidos en este equipo (Windows 11, sin GPU):
+
+| Variante | Voxels NCR/NET | Voxels ED | Voxels ET |
+|----------|---------------:|----------:|----------:|
+| Pesos aleatorios (control) | 1.146.239 | 132.772 | 3.882.512 |
+| **Pesos pre-entrenados** | **623** | **60** | **1.075** |
+
+El modelo entrenado detecta **exactamente** la región del tumor sintético plantado (~1.700 voxels totales), mientras que con pesos aleatorios la salida es ruido distribuido por todo el volumen. Esto confirma que (1) los pesos cargan correctamente, (2) el pre-procesamiento es correcto, y (3) el pipeline completo (sliding-window + post-procesamiento) produce salidas plausibles.
+
+### 7.6 Datasets reales recomendados
+
+Para correr la pista 2 sobre datos reales (no sintéticos), se usan datasets públicos compatibles con el formato esperado por el runner (4 archivos `_t1.nii.gz`, `_t1ce.nii.gz`, `_t2.nii.gz`, `_flair.nii.gz` por caso):
+
+| Dataset | Tamaño | Acceso | Recomendación |
+|---------|-------:|--------|---------------|
+| **Medical Decathlon Task01_BrainTumour** | ~7 GB, 750 casos | Descarga directa | Recomendado para empezar; subconjunto de BraTS 2017 |
+| **Kaggle BraTS 2021** | ~30 GB, 1.251 casos | Requiere cuenta Kaggle + API key | Mismo dataset con el que se entrenó el modelo |
+| **Synapse BraTS oficial** | ~30 GB | Requiere aprobación manual | Sólo si se necesita el dataset original con la última versión |
+
+Detalles de uso, links y conversión de formatos en [brats21.md sección 7](brats21.md#7-datasets-recomendados-para-datos-reales).
+
+### 7.7 Métrica de evaluación
+
+Cuando el caso de entrada incluye **ground truth** (segmentación experta), se puede computar el **Dice score** por sub-región:
+
+\[ \text{Dice}(A, B) = \frac{2 \cdot |A \cap B|}{|A| + |B|} \]
+
+con A = predicción binaria, B = ground truth, evaluado por separado para WT, TC y ET. El paper reporta Dice promedio ~0.88 sobre el set de validación oficial.
+
+### 7.8 Conclusión sobre la extensión
+
+La pista 2 **complementa** la pista 1 demostrando cómo aplicar la recomendación de la cátedra de usar modelos pre-entrenados. No reemplaza el trabajo clásico de la pista 1 (que sigue siendo el aprendizaje principal de la materia) sino que muestra que:
+
+1. Para problemas con dominio bien definido (tumor cerebral en MRI multimodal) **existen** modelos pre-entrenados de altísima calidad.
+2. Integrarlos en un proyecto propio es **factible** con esfuerzo razonable, aunque requiere resolver incompatibilidades de versiones y supuestos sobre el entorno (GPU, OS).
+3. El resultado supera ampliamente lo que podríamos lograr con técnicas clásicas en MRI 3D multimodal (problema donde las técnicas clásicas tienen rendimiento muy limitado por la complejidad del dominio).

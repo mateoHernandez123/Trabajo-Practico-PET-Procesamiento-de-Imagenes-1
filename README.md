@@ -1,12 +1,19 @@
-# Trabajo Práctico — Extracción y Caracterización de Objetos en PET (con Morfología)
+# Trabajo Práctico — Detección y Caracterización de Tumores en Imágenes Médicas
 
 **Materia:** Procesamiento de Imágenes I  
 **Integrantes:** Mateo Hernandez, Felipe Lucero  
 **Repositorio en GitHub:** [github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia](https://github.com/mateoHernandez123/Trabajo-Practico-PET-Morfologia)
 
-Este trabajo implementa un pipeline en Python: preprocesamiento (mediana + gaussiano), detección de bordes (Canny), segmentación con dos métodos intercambiables (Region Growing y K-Means), **post-procesamiento morfológico con erosión y dilatación explícitas** y **filtro por forma** para aislar tumores descartando captación fisiológica (cerebro, órganos), extracción de features (área, perímetro, centroide, ejes, orientación, excentricidad, compacidad, intensidad media), generación de máscara binaria y recortes individuales por objeto.
+El TP aborda el problema de **detección y caracterización de tumores en imágenes médicas** combinando dos enfoques complementarios:
 
-## Cómo ejecutar
+| Pista | Modalidad | Técnica | Estado |
+|-------|-----------|---------|--------|
+| **1. PET de cuerpo completo** | Imagen 2D `.png` | Procesamiento clásico (Region Growing, K-Means, morfología, filtro por forma) | Implementado en `master` |
+| **2. MRI cerebral multimodal** | Volumen 3D `.nii.gz` (4 modalidades: T1, T1ce, T2, FLAIR) | **Modelo pre-entrenado** [BraTS21](https://github.com/Alxaline/BraTS21) (U-Net 3D, ensamble de hasta 10 folds del paper MICCAI 2021) | Implementado en rama `feat/brats21-pretrained-integration` |
+
+Las dos pistas atacan el mismo problema (segmentar tumor sobre tejido sano) en dominios distintos. La pista 1 muestra el dominio de las técnicas clásicas vistas en la materia; la pista 2 demuestra cómo, **siguiendo la recomendación de la cátedra**, se puede mejorar la precisión apoyándose en un modelo deep-learning ya entrenado por terceros, sin necesidad de entrenar nada propio.
+
+## Cómo ejecutar — Pista 1 (PET clásico)
 
 ```bash
 pip install -r requirements.txt
@@ -18,7 +25,52 @@ Respuestas y justificaciones de la consigna: [docs/doc.md](docs/doc.md).
 
 La carpeta `resultados/` se genera al ejecutar el script. La imagen de entrada debe estar en `imagenes/pet_cuerpo_completo.png` (ver [docs/Readme.md](docs/Readme.md) para usar otra ruta).
 
+## Cómo ejecutar — Pista 2 (Brain MRI con BraTS21)
+
+```bash
+git checkout feat/brats21-pretrained-integration
+
+# 1. Entorno aislado
+python -m venv .venv-brats21
+.venv-brats21/Scripts/python.exe -m pip install -U pip wheel setuptools
+.venv-brats21/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv-brats21/Scripts/python.exe -m pip install -r requirements-brats21.txt
+
+# 2. Descargar pesos pre-entrenados (~617 MB, 10 folds del paper)
+.venv-brats21/Scripts/python.exe scripts/brats21_download_weights.py
+
+# 3. Descargar un caso real del Medical Decathlon (streaming, ~11 MB)
+.venv-brats21/Scripts/python.exe scripts/brats21_download_msd_case.py --case BRATS_001
+.venv-brats21/Scripts/python.exe scripts/brats21_split_msd_case.py \
+    --case BRATS_001 \
+    --raw  data/msd_brats/_raw_msd \
+    --out  data/msd_brats/BRATS_001
+
+# 4. Correr inferencia con 1 fold (rápido, ~48 s CPU)
+.venv-brats21/Scripts/python.exe scripts/brats21_run_inference.py \
+    --config external/BraTS21/checkpoints/final_weights/baseline_equiunet_assp_evocor/fold0_ns/config.yaml \
+    --input  data/msd_brats/BRATS_001 \
+    --output resultados_brats21/msd_brats_001_fold0 \
+    --roi 96 96 96 --overlap 0.25 --cleaning-areas
+
+# 5. Evaluar contra ground truth (Dice por sub-región)
+.venv-brats21/Scripts/python.exe scripts/brats21_eval_dice.py \
+    --pred resultados_brats21/msd_brats_001_fold0/BRATS_001_seg.nii.gz \
+    --gt   data/msd_brats/BRATS_001/BRATS_001_seg.nii.gz
+
+# 6. Visualizar GT vs predicción
+.venv-brats21/Scripts/python.exe scripts/brats21_visualize_vs_gt.py \
+    --case data/msd_brats/BRATS_001 \
+    --pred resultados_brats21/msd_brats_001_fold0/BRATS_001_seg.nii.gz \
+    --gt   data/msd_brats/BRATS_001/BRATS_001_seg.nii.gz \
+    --out  resultados_brats21/msd_brats_001_fold0/preview_vs_gt.png
+```
+
+Documentación completa (datasets recomendados, formato de entrada, resultados medidos, limitaciones): [docs/brats21.md](docs/brats21.md).
+
 ---
+
+# Pista 1 — Detección clásica en PET de cuerpo completo
 
 ## Imagen de entrada
 
@@ -190,21 +242,124 @@ De izquierda a derecha: máscara cruda (cerebro enorme) → erosión → dilatac
 
 ---
 
+# Pista 2 — Detección de tumor cerebral en MRI con modelo pre-entrenado
+
+> Disponible en la rama `feat/brats21-pretrained-integration`.  
+> Documentación detallada: [docs/brats21.md](docs/brats21.md).
+
+## Motivación
+
+La cátedra recomendó usar **modelos pre-entrenados** para mejorar la precisión de la detección de tumores cerebrales sin tener que entrenar uno propio (lo cual requeriría miles de imágenes anotadas, GPU y semanas de tiempo). El modelo [Alxaline/BraTS21](https://github.com/Alxaline/BraTS21) — solución del autor al desafío RSNA/ASNR/MICCAI Brain Tumor Segmentation 2021 — es exactamente esa herramienta: una U-Net 3D entrenada sobre 1.251 pacientes con tumor cerebral, con Dice promedio reportado de **0.88** sobre el set de validación oficial.
+
+## Qué se integró
+
+| Componente | Función |
+|-----------|---------|
+| `external/BraTS21/` | Repositorio upstream clonado completo, sin modificar |
+| `external/BraTS21/checkpoints/` | 10 folds pre-entrenados del paper (5 con criterio Dice + 5 con criterio Jaccard), ~617 MB |
+| `scripts/brats21_download_weights.py` | Descarga automática de los pesos desde Google Drive |
+| `scripts/brats21_download_msd_case.py` | Descarga selectiva de un caso real de Medical Decathlon (streaming-tar, ~11 MB en lugar de los 7 GB del tar completo) |
+| `scripts/brats21_split_msd_case.py` | Convierte el NIfTI 4D del Decathlon al formato BraTS estándar (4 archivos `_t1`/`_t1ce`/`_t2`/`_flair`) y remapea labels |
+| `scripts/brats21_make_synthetic_case.py` | Genera un caso MRI sintético para validar el pipeline antes de usar datos reales |
+| `scripts/brats21_make_smoke_fold.py` | Fold con pesos aleatorios para smoke test rápido sin descargar pesos |
+| `scripts/brats21_run_inference.py` | Runner CPU end-to-end (carga config + pesos, sliding window 3D, post-procesamiento, guardado NIfTI). Soporta single fold o ensamble |
+| `scripts/brats21_eval_dice.py` | Computa Dice score por sub-región (WT, TC, ET) entre predicción y ground truth |
+| `scripts/brats21_visualize.py` | Genera PNG con la segmentación superpuesta sobre las 4 modalidades |
+| `scripts/brats21_visualize_vs_gt.py` | Genera PNG comparativo ground truth vs predicción en 3 planos |
+| `requirements-brats21.txt` | Dependencias modernas (PyTorch 2.12 CPU + MONAI 1.3, compatibles con Python 3.11) |
+| `docs/brats21.md` | Documentación completa de la pista 2 |
+| `docs/figuras/brats21/` | Figuras versionadas de resultados sobre el caso real BRATS_001 |
+
+## Formato de entrada esperado
+
+El runner espera una carpeta con las **4 modalidades MRI estándar de BraTS** en NIfTI:
+
+```
+<carpeta_del_caso>/
+├── <case_id>_t1.nii.gz       # T1-weighted
+├── <case_id>_t1ce.nii.gz     # T1 con contraste (gadolinio)
+├── <case_id>_t2.nii.gz       # T2-weighted
+└── <case_id>_flair.nii.gz    # FLAIR
+```
+
+Datasets públicos compatibles directamente con este formato (ver [docs/brats21.md](docs/brats21.md) para detalles):
+- **Medical Decathlon Task01_BrainTumour** (recomendado para empezar)
+- **Kaggle BraTS 2021**
+- **Synapse BraTS oficial** (requiere registro)
+
+## Salida que produce
+
+| Archivo | Contenido |
+|---------|-----------|
+| `resultados_brats21/<corrida>/<case_id>_seg.nii.gz` | Segmentación con etiquetas BraTS estándar: 0=fondo, 1=NCR/NET (necrosis), 2=ED (edema), 4=ET (enhancing tumor) |
+| `resultados_brats21/<corrida>/preview.png` | Visualización: 3 planos centrales × 4 modalidades, máscara superpuesta en color |
+| `resultados_brats21/<corrida>/<case_id>_prob_{WT,TC,ET}.nii.gz` | (opcional, con `--save-probs`) Mapas de probabilidad por subregión |
+
+Las tres subregiones segmentadas son las que define el challenge BraTS:
+- **WT (Whole Tumor)** = todo lo que es tumor = unión de NCR + ED + ET
+- **TC (Tumor Core)** = núcleo activo = NCR + ET
+- **ET (Enhancing Tumor)** = sólo la parte que capta contraste
+
+## Material clínico de referencia (no usado directamente por el modelo)
+
+En `imagenes/clinicas_referencia/` quedan guardadas **14 imágenes clínicas reales** aportadas durante el desarrollo (CT torácicas y PET de cuerpo completo del centro IMAXE, Buenos Aires). **Estas imágenes no se procesan con BraTS21** porque son CT/PET 2D de tórax/cuerpo entero, mientras que BraTS21 requiere MRI 3D cerebral en 4 modalidades. Se conservan como referencia visual del tipo de estudios médicos reales que existen en producción, y eventualmente podrían usarse para extender la **Pista 1 (PET clásico)** con casos adicionales si se digitalizan a un formato compatible.
+
+## Resultado real sobre un caso de Medical Decathlon
+
+Se descargó el caso `BRATS_001` del [Medical Segmentation Decathlon Task01_BrainTumour](http://medicaldecathlon.com/) (subconjunto público de BraTS, descarga directa sin registro) y se corrió la inferencia con el fold0 pre-entrenado del paper sobre este equipo (Windows 11, sin GPU).
+
+<p align="center">
+  <img src="docs/figuras/brats21/msd_brats_001_fold0_vs_gt.png" alt="BraTS_001: ground truth vs predicción de BraTS21" width="800">
+</p>
+
+**Comparativa ground truth vs predicción del modelo** sobre FLAIR, en los 3 planos centrales del tumor (axial, coronal, sagital).
+
+| Variante | Tiempo CPU | Dice WT | Dice TC | Dice ET | Dice mean |
+|----------|-----------:|--------:|--------:|--------:|----------:|
+| **1 fold** (ROI 96, overlap 0.25) | **48.6 s** | **0.9119** | 0.6288 | **0.8942** | **0.8117** |
+| 1 fold (ROI 128, overlap 0.5 — receta del paper) | 76.4 s | 0.9036 | 0.6157 | 0.8921 | 0.8038 |
+| **Ensamble 10 folds** (paper config) | 496.7 s | **0.9121** | 0.6273 | **0.8943** | 0.8112 |
+| Paper (ensamble 10 folds + TTA, validación oficial BraTS 2021) | — | 0.925 | 0.876 | 0.840 | **0.881** |
+
+Nuestro **WT** y **ET** están casi en lo reportado por el paper (diferencias < 0.02). El **TC** sale más bajo en este caso particular porque el modelo confunde parte del edema (color verde) con necrosis (color azul) — visible en la figura de arriba: el rojo (ET) coincide casi perfecto, pero el reparto entre verde y azul fuera del rojo está sesgado. Esto pasa también con el ensamble completo, indicando que es una característica del caso `BRATS_001`, no de un fold mal entrenado. Detalles y análisis completos en [docs/brats21.md sección 9](docs/brats21.md#92-caso-real-del-medical-decathlon--con-dice-score-contra-ground-truth).
+
+## Comparativa de las dos pistas
+
+| Criterio | Pista 1 (PET clásico) | Pista 2 (BraTS21 pre-entrenado) |
+|----------|----------------------|--------------------------------|
+| Técnica | Region Growing / K-Means + morfología + filtro por forma | U-Net 3D con 16.6M parámetros + ensamble multi-fold |
+| Anotación necesaria | Ninguna (sin supervisión) | Ninguna (modelo ya entrenado en BraTS 2021) |
+| Modalidad | PET 2D, 1 canal | MRI 3D, 4 canales |
+| Tiempo de procesamiento (CPU) | < 5 s por imagen | 48 s (1 fold, ROI 96); 76 s (1 fold, ROI 128); ~8 min (ensamble 10 folds) |
+| Métricas validables | Visual y por features (área, compacidad, etc.) | **Dice score vs ground truth** (medido: 0.91 WT, 0.89 ET) |
+| Hiperparámetros sensibles | Percentil, tolerancia, kernels morfológicos | Threshold (0.5), ROI sliding-window, overlap |
+
+---
+
 ## Estructura del proyecto
 
-| Ruta                         | Contenido                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------ |
-| `README.md`                  | Este archivo: resumen, figuras y estructura                                                      |
-| `segment_pet.py`             | Pipeline: preprocesamiento, bordes, segmentación, morfología, filtro por forma, features, recortes |
-| `requirements.txt`           | Dependencias (numpy, opencv-python, matplotlib)                                                  |
-| `imagenes/`                  | Carpeta de entrada; por defecto `pet_cuerpo_completo.png`                                        |
-| `resultados/`                | PNG, CSV, recortes y pasos morfológicos generados al ejecutar                                    |
-| `resultados/<m>/morfologia/` | Imágenes intermedias: erosión, dilatación, cierre, filtro área, filtro forma                     |
-| `docs/Readme.md`             | Instalación, entorno virtual y salidas                                                           |
-| `docs/doc.md`                | Informe / respuestas a la consigna                                                               |
-| `.gitignore`                 | Excluye venv/, cachés de Python e ignorados de IDE                                               |
+| Ruta | Contenido | Pista |
+|------|-----------|------|
+| `README.md` | Este archivo: resumen, figuras y estructura | — |
+| `segment_pet.py` | Pipeline PET clásico: preprocesamiento, bordes, segmentación, morfología, filtro por forma, features, recortes | 1 |
+| `requirements.txt` | Dependencias pista 1 (numpy, opencv-python, matplotlib) | 1 |
+| `imagenes/` | Entrada pista 1; por defecto `pet_cuerpo_completo.png` | 1 |
+| `resultados/` | PNG, CSV, recortes y pasos morfológicos de la pista 1 (generados al ejecutar) | 1 |
+| `resultados/<m>/morfologia/` | Imágenes intermedias: erosión, dilatación, cierre, filtro área, filtro forma | 1 |
+| `docs/Readme.md` | Instalación, entorno virtual y salidas | 1 |
+| `docs/doc.md` | Informe / respuestas a la consigna; incluye sección sobre la extensión deep-learning | 1 + 2 |
+| `external/BraTS21/` | Repo upstream pre-entrenado, clonado sin modificar | 2 |
+| `scripts/brats21_*.py` | Scripts de descarga, generación de caso sintético, inferencia y visualización | 2 |
+| `requirements-brats21.txt` | Dependencias pista 2 (torch 2.12 CPU, MONAI 1.3) | 2 |
+| `docs/brats21.md` | Documentación completa de la pista 2 | 2 |
+| `.venv-brats21/` | (ignorado) venv aislado para la pista 2 | 2 |
+| `data/brats21_synth/` | (ignorado) caso sintético generado en pista 2 | 2 |
+| `resultados_brats21/` | (ignorado) salidas NIfTI + PNG de la inferencia BraTS21 | 2 |
+| `.gitignore` | Excluye venv/, pesos descargados, datos y resultados generados | — |
 
-Parámetros útiles en código: `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL`, `ERODE_ITERATIONS`, `DILATE_KERNEL`, `DILATE_ITERATIONS`, `ORGAN_MIN_AREA`, `ORGAN_MIN_COMPACTNESS`, `ORGAN_MIN_SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW`/`CANNY_HIGH`, `CROP_PAD` en `segment_pet.py`.
+Parámetros útiles en código:
+- **Pista 1** (`segment_pet.py`): `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEANS_K`, `MIN_LESION_AREA`, `ERODE_KERNEL`, `ERODE_ITERATIONS`, `DILATE_KERNEL`, `DILATE_ITERATIONS`, `ORGAN_MIN_AREA`, `ORGAN_MIN_COMPACTNESS`, `ORGAN_MIN_SOLIDITY`, `MORPH_KERNEL`, `CANNY_LOW`/`CANNY_HIGH`, `CROP_PAD`.
+- **Pista 2** (`scripts/brats21_run_inference.py`): `--roi` (tamaño del patch sliding window), `--overlap`, `--threshold`, `--cleaning-areas`, `--save-probs`.
 
 ---
 
@@ -213,4 +368,10 @@ Parámetros útiles en código: `HOT_PERCENTILE`, `REGION_GROW_TOLERANCE`, `KMEA
 ```bash
 git clone git@github.com:mateoHernandez123/Trabajo-Practico-PET-Morfologia.git
 cd Trabajo-Practico-PET-Morfologia
+
+# Para trabajar en la pista 1 (PET clásico):
+git checkout master
+
+# Para trabajar en la pista 2 (Brain MRI con BraTS21):
+git checkout feat/brats21-pretrained-integration
 ```
