@@ -1,0 +1,52 @@
+# Mapping de filename WhatsApp original → nombre semántico
+# Generado por scripts/rename_whatsapp_images.py
+
+WhatsApp Image 2026-05-30 at 17.22.55.jpeg	→	ct_cerebro_coronal_anotado_01.jpeg
+WhatsApp Image 2026-05-30 at 17.22.56 (1).jpeg	→	ct_cerebro_sagital_anotado_01.jpeg
+WhatsApp Image 2026-05-30 at 17.22.56 (2).jpeg	→	pet_cuerpo_mip_01.jpeg
+WhatsApp Image 2026-05-30 at 17.22.56.jpeg	→	ct_cerebro_coronal_anotado_02.jpeg
+WhatsApp Image 2026-05-30 at 17.22.57 (1).jpeg	→	pet_cuerpo_mip_02.jpeg
+WhatsApp Image 2026-05-30 at 17.22.57 (2).jpeg	→	pet_cuerpo_mip_03.jpeg
+WhatsApp Image 2026-05-30 at 17.22.57.jpeg	→	pet_cuerpo_mip_04.jpeg
+WhatsApp Image 2026-05-30 at 17.22.58 (1).jpeg	→	ct_torax_axial_panel_01.jpeg
+WhatsApp Image 2026-05-30 at 17.22.58 (2).jpeg	→	ct_torax_axial_panel_02.jpeg
+WhatsApp Image 2026-05-30 at 17.22.58 (3).jpeg	→	ct_torax_axial_panel_03.jpeg
+WhatsApp Image 2026-05-30 at 17.22.58.jpeg	→	ct_torax_axial_panel_04.jpeg
+WhatsApp Image 2026-05-30 at 17.22.59 (1).jpeg	→	ct_torax_axial_panel_05.jpeg
+WhatsApp Image 2026-05-30 at 17.22.59 (2).jpeg	→	pet_cuerpo_mip_05.jpeg
+WhatsApp Image 2026-05-30 at 17.22.59 (3).jpeg	→	pet_cuerpo_mip_06.jpeg
+WhatsApp Image 2026-05-30 at 17.22.59.jpeg	→	ct_torax_axial_panel_06.jpeg
+WhatsApp Image 2026-05-30 at 17.23.00 (1).jpeg	→	ct_torax_axial_panel_07.jpeg
+WhatsApp Image 2026-05-30 at 17.23.00 (2).jpeg	→	ct_torax_axial_panel_08.jpeg
+WhatsApp Image 2026-05-30 at 17.23.00.jpeg	→	pet_cuerpo_mip_07.jpeg
+WhatsApp Image 2026-05-30 at 17.23.01 (1).jpeg	→	ct_torax_axial_panel_09.jpeg
+WhatsApp Image 2026-05-30 at 17.23.01 (2).jpeg	→	ct_torax_axial_panel_10.jpeg
+WhatsApp Image 2026-05-30 at 17.23.01 (3).jpeg	→	ct_torax_axial_panel_11.jpeg
+WhatsApp Image 2026-05-30 at 17.23.01.jpeg	→	ct_torax_axial_panel_12.jpeg
+WhatsApp Image 2026-05-30 at 17.23.02 (1).jpeg	→	ct_torax_axial_panel_13.jpeg
+WhatsApp Image 2026-05-30 at 17.23.02 (2).jpeg	→	ct_torax_axial_panel_14.jpeg
+WhatsApp Image 2026-05-30 at 17.23.02 (3).jpeg	→	ct_torax_axial_panel_15.jpeg
+WhatsApp Image 2026-05-30 at 17.23.02.jpeg	→	ct_torax_axial_panel_16.jpeg
+WhatsApp Image 2026-05-30 at 17.23.03 (1).jpeg	→	pet_cuerpo_mip_08.jpeg
+WhatsApp Image 2026-05-30 at 17.23.03 (2).jpeg	→	pet_cuerpo_mip_09.jpeg
+WhatsApp Image 2026-05-30 at 17.23.03 (3).jpeg	→	ct_torax_axial_panel_17.jpeg
+WhatsApp Image 2026-05-30 at 17.23.03 (4).jpeg	→	ct_torax_axial_panel_18.jpeg
+WhatsApp Image 2026-05-30 at 17.23.03.jpeg	→	pet_cuerpo_mip_10.jpeg
+WhatsApp Image 2026-05-30 at 17.23.04 (1).jpeg	→	ct_torax_axial_panel_19.jpeg
+WhatsApp Image 2026-05-30 at 17.23.04 (2).jpeg	→	ct_torax_axial_panel_20.jpeg
+WhatsApp Image 2026-05-30 at 17.23.04.jpeg	→	ct_torax_axial_panel_21.jpeg
+WhatsApp Image 2026-05-30 at 17.23.05 (1).jpeg	→	ct_torax_axial_panel_22.jpeg
+WhatsApp Image 2026-05-30 at 17.23.05 (2).jpeg	→	ct_torax_axial_panel_23.jpeg
+WhatsApp Image 2026-05-30 at 17.23.05 (3).jpeg	→	ct_torax_axial_panel_24.jpeg
+WhatsApp Image 2026-05-30 at 17.23.05.jpeg	→	ct_torax_axial_panel_25.jpeg
+WhatsApp Image 2026-05-30 at 17.23.06 (1).jpeg	→	ct_torax_axial_panel_26.jpeg
+WhatsApp Image 2026-05-30 at 17.23.06 (2).jpeg	→	ct_craneo_basal_axial_01.jpeg
+WhatsApp Image 2026-05-30 at 17.23.06 (3).jpeg	→	ct_craneo_basal_axial_02.jpeg
+WhatsApp Image 2026-05-30 at 17.23.06.jpeg	→	ct_torax_axial_panel_27.jpeg
+WhatsApp Image 2026-05-30 at 17.23.07 (1).jpeg	→	ct_cerebro_axial_01.jpeg
+WhatsApp Image 2026-05-30 at 17.23.07 (2).jpeg	→	ct_cerebro_axial_02.jpeg
+WhatsApp Image 2026-05-30 at 17.23.07 (3).jpeg	→	ct_cerebro_axial_03.jpeg
+WhatsApp Image 2026-05-30 at 17.23.07.jpeg	→	ct_cerebro_axial_04.jpeg
+WhatsApp Image 2026-05-30 at 17.23.08 (1).jpeg	→	pet_cerebro_axial_hotspot_01.jpeg
+WhatsApp Image 2026-05-30 at 17.23.08 (2).jpeg	→	pet_cerebro_axial_hotspot_02.jpeg
+WhatsApp Image 2026-05-30 at 17.23.08.jpeg	→	pet_cerebro_axial_hotspot_03.jpeg

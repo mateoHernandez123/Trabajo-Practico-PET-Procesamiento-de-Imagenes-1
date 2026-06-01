@@ -9,8 +9,14 @@ build/
 
 # Virtual environments
 .venv/
+.venv-medsam/
 venv/
 env/
+
+# MedSAM pesos y resultados (no se versionan, ~358 MB pesos cacheados en ~/.cache/huggingface)
+external/MedSAM/work_dir/
+external/MedSAM/assets/                   # 31 MB de imágenes del paper, no necesarias para correr
+resultados_medsam/
 
 # IDE
 .vscode/

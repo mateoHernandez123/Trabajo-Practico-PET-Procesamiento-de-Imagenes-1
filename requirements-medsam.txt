@@ -1,0 +1,27 @@
+# Dependencias para Pista 2 (MedSAM universal — segmentación 2D médica)
+# Instalar en venv aislado: .venv-medsam
+#
+# IMPORTANTE: torch CPU se instala desde el índice de PyTorch:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+# Después este archivo:
+#   pip install -r requirements-medsam.txt
+
+# Deep learning
+transformers>=4.40,<6.0          # carga MedSAM (SamModel + SamProcessor) desde HuggingFace
+safetensors>=0.4.0                # backend de pesos
+huggingface-hub>=0.20.0           # download de pesos pre-entrenados
+
+# Procesamiento de imagen
+opencv-python>=4.8,<5.0
+scikit-image>=0.22,<1.0
+Pillow>=10.0,<13.0
+numpy>=1.26,<3.0
+scipy>=1.11,<2.0
+
+# Visualización
+matplotlib>=3.7,<4.0
+
+# Utilidades
+tqdm>=4.65,<5.0
+requests>=2.31,<3.0
